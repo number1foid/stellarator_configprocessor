@@ -313,10 +313,7 @@ pub struct Config {
 }
 
 /// A configuration without any value.
-#[must_use]
-pub const fn empty_config() -> Config {
-    Config { values: [0.0; N_KEYS], assigned: [false; N_KEYS] }
-}
+pub const EMPTY_CONFIG: Config = Config { values: [0.0; N_KEYS], assigned: [false; N_KEYS] };
 
 /// Store the number `value` under the key `name`.
 ///
@@ -369,6 +366,7 @@ pub fn validate(config: &Config) -> Result<(), Error> {
 /// # Errors
 /// Returns an error if the text is too long or writing fails.
 pub fn write_json_text<W: Write>(out: &mut W, text: &str) -> Result<(), Error> {
+    ensure(!text.contains('\u{0}'), BAD, "a text contains a NUL character")?;
     ensure(text.len() <= MAX_TEXT, Code::Limit, "a text is too long to be written")?;
     write!(out, "\"")?;
     for character in text.chars().take(MAX_TEXT) {
@@ -403,6 +401,7 @@ pub fn write_json_real<W: Write>(out: &mut W, value: f64) -> Result<(), Error> {
 /// # Errors
 /// Returns an error if the configuration is invalid or writing fails.
 pub fn write_config<W: Write>(out: &mut W, config: &Config, name: &str) -> Result<(), Error> {
+    ensure(name.len() <= MAX_TEXT, Code::Limit, "the configuration name is too long")?;
     validate(config)?;
     ensure(!name.is_empty(), BAD, "the configuration needs a name")?;
     writeln!(out, "{{")?;

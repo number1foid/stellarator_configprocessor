@@ -4,7 +4,7 @@
 //! one of these constants when the data was read or the buffers were created,
 //! so the number of iterations of every loop has a compile-time bound.
 
-/// Largest size of an input file [bytes].
+/// Largest size of an input file `[bytes]`.
 pub const MAX_FILE_BYTES: usize = 1 << 30;
 /// Largest number of lines read from a coil file.
 pub const MAX_LINES: usize = 4_000_000;

@@ -9,19 +9,28 @@ obtained. The values themselves are defined in [schema.md](schema.md).
 
 ## 2. Install
 
+The program is written in Rust and has no other dependencies. Install the
+Rust toolchain from <https://rustup.rs> (version 1.82 or newer), then build:
+
 ```
-pip install -e .
+cargo build --release
 ```
 
-Python 3.10 or newer, NumPy and netCDF4. The command
-`stellarator-configprocessor` is then available.
+The program is then `target/release/stellarator-configprocessor`
+(`stellarator-configprocessor.exe` on Windows). `cargo install --path .`
+copies it to Cargo's `bin` folder, so that it can be run from anywhere.
+`stellarator-configprocessor --help` lists all options.
 
 ## 3. Inputs
 
 ### Equilibrium
 
-A VMEC `wout` file in NetCDF format, from VMEC2000 or VMEC++. The last closed
-flux surface defines the plasma; inner surfaces are used for one derivative.
+A VMEC `wout` file in the NetCDF classic format (CDF-1 or CDF-2, "64-bit
+offset"), which is what VMEC2000 writes by default. The last closed flux
+surface defines the plasma; inner surfaces are used for one derivative.
+
+Files in the HDF5-based NetCDF-4 format are rejected with a message. Convert
+them with the NetCDF tools: `nccopy -k classic wout_in.nc wout_out.nc`.
 
 ### Coils
 
@@ -120,10 +129,14 @@ otherwise. It contains the settings, the consistency check, every value with
 unit and method, per-coil diagnostics, the peak-field fit and any warnings.
 The same text is printed unless `-q` is given.
 
+The output files are opened before the calculation starts. If the run fails,
+an output file that already existed is left as it was; one that did not exist
+is left behind empty.
+
 ## 7. Worked example: W7-X
 
-The files are public but not part of this repository. One script downloads
-them and builds the coil file:
+The files are public but not part of this repository. One script (Python
+with NumPy) downloads them and builds the coil file:
 
 ```
 python scripts/fetch_reference_data.py
@@ -146,7 +159,7 @@ stellarator-configprocessor data/local/wout_w7x_standard.nc data/local/coils.w7x
     --process-input runs/w7x.IN.DAT --report runs/w7x_report.txt
 ```
 
-It takes about one minute. The consistency check prints:
+It takes about ten seconds. The consistency check prints:
 
 ```
   field on axis: coils 2.78472 T, equilibrium 2.78473 T (ratio 0.999995)
@@ -190,33 +203,53 @@ them; the script explains each.
 
 Run time grows with the product of the two and with the number of distinct
 coil shapes. Coils that are symmetric images of each other are computed once.
+The W7-X example takes about 9 seconds on one processor core; the program
+uses a single core.
 
-## 9. Python interface
+All sizes have fixed upper bounds, listed in `src/limits.rs`: for example 512
+coils, 1024 samples per coil and 12 filaments across each side of the winding
+pack. An input beyond a bound is rejected with a message.
 
-```python
-from stellarator_configprocessor.io.equilibrium import read_wout
-from stellarator_configprocessor.io.coils import read_makegrid
-from stellarator_configprocessor.pipeline import Settings, run
-from stellarator_configprocessor.schema import write_config
-from stellarator_configprocessor.report import write_report
+## 9. Use as a library
 
-eq = read_wout("wout_mydesign.nc")
-coils = read_makegrid("coils.mydesign")
-settings = Settings(wp_radial=0.6, wp_toroidal=0.5, epseff=0.015, neutron_peakfactor=1.6)
+The crate can be used from other Rust code. The command-line program does
+no more than this:
 
-result = run(eq, coils, settings)
-write_config("myrun.stella_conf.json", result.config)
-write_report("myrun_report.json", result.report)
+```rust
+use stellarator_configprocessor::equilibrium::read_wout;
+use stellarator_configprocessor::error::Error;
+use stellarator_configprocessor::makegrid::{read_makegrid, GroupFactors};
+use stellarator_configprocessor::pipeline::{default_settings, new_workspace, run};
+use stellarator_configprocessor::schema::write_config;
+
+fn main() -> Result<(), Error> {
+    let bytes = std::fs::read("wout_mydesign.nc")?;
+    let text = std::fs::read_to_string("coils.mydesign")?;
+    let no_factors = GroupFactors { count: 0, group: [0.0; 32], factor: [1.0; 32] };
+
+    let mut eq = read_wout(&bytes)?;
+    let mut coils = read_makegrid(&text, &no_factors)?;
+    // Winding pack (radial, toroidal) [m], epseff, neutron peaking factor.
+    let settings = default_settings((0.6, 0.5), 0.015, 1.6);
+
+    // All memory is allocated here; `run` allocates nothing.
+    let mut work = new_workspace(&eq, &coils, &settings)?;
+    let outcome = run(&mut eq, &mut coils, &settings, &mut work, &mut std::io::sink())?;
+
+    let mut file = std::fs::File::create("myrun.stella_conf.json")?;
+    write_config(&mut file, &outcome.config, "my design")
+}
 ```
 
-`result.config` is a dictionary with the 35 keys. Each calculation is also
-available on its own, for example
-`stellarator_configprocessor.geometry.plasma.surface_geometry`,
-`stellarator_configprocessor.winding_pack.winding_pack_field` and
-`stellarator_configprocessor.energy.magnetic_energy`.
+`outcome.config` holds the 35 values in the order of `schema::KEYS`. Each
+calculation is also available on its own, for example
+`plasma::surface_geometry`, `winding_pack::reference_pack_field` and
+`energy::magnetic_energy`. `cargo doc --open` shows the documentation of
+every function.
 
-If a coil file holds only the coils of one half period,
-`stellarator_configprocessor.io.coils.expand_symmetry` builds the full set.
+The coil file must list the coils of the full torus. The Python script
+`scripts/fetch_reference_data.py` shows how a full set is built from the
+coils of one half period.
 
 ## 10. Limitations and known issues
 
@@ -236,3 +269,8 @@ If a coil file holds only the coils of one half period,
   neighbouring coils overlap, the tool warns and states the overlap; the peak
   field and forces are then not meaningful. The `a1`, `a2` fit uses packs from
   half the reference size up to the reference size.
+- **NetCDF classic only.** See section 3.
+- **Coding rules.** The code follows the NASA/JPL "Power of Ten" rules; what
+  that means for users (fixed size limits, no memory allocation during the
+  calculation, one processor core) is described in
+  [power_of_ten.md](power_of_ten.md).

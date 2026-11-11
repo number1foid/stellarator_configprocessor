@@ -34,11 +34,11 @@ pub const DEFAULT_TOLERANCES: Tolerances =
 /// Coil field sampled along the equilibrium's magnetic axis; a reusable buffer.
 #[derive(Debug, Clone)]
 pub struct AxisField {
-    /// Axis points [m].
+    /// Axis points `[m]`.
     pub points: Vec<Vec3>,
-    /// Axis line elements [m].
+    /// Axis line elements `[m]`.
     pub line: Vec<Vec3>,
-    /// Coil field at the points [T].
+    /// Coil field at the points `[T]`.
     pub field: Vec<Vec3>,
     /// One flag per coil, all set: every coil contributes.
     pub all_coils: Vec<bool>,
@@ -70,11 +70,11 @@ pub struct Consistency {
     pub linkage_ratio: f64,
     /// Mean perpendicular field on the axis divided by the mean field.
     pub axis_misalignment: f64,
-    /// Arc-length mean of the coil field strength on the axis [T].
+    /// Arc-length mean of the coil field strength on the axis `[T]`.
     pub b_axis_coils: f64,
-    /// Arc-length mean of the equilibrium's field strength on the axis [T].
+    /// Arc-length mean of the equilibrium's field strength on the axis `[T]`.
     pub b_axis_equilibrium: f64,
-    /// Arc-length mean of the toroidal component of the coil field [T].
+    /// Arc-length mean of the toroidal component of the coil field `[T]`.
     pub b_axis_toroidal: f64,
     /// `b_axis_coils / b_axis_equilibrium`.
     pub field_ratio: f64,
@@ -110,6 +110,7 @@ pub fn axis_field(
     surface: &mut Coefficients,
     axis: &mut AxisField,
 ) -> Result<(), Error> {
+    ensure(eq.nfp >= 1, Code::Equilibrium, "the equilibrium has no field periods")?;
     ensure(axis.all_coils.len() == coils.n_coils, BAD, "the axis buffer does not match the coils")?;
     ensure(axis.points.len() == AXIS_POINTS, BAD, "the axis buffer has the wrong size")?;
     interpolate(eq, 0.0, surface)?;
@@ -139,6 +140,7 @@ struct AxisSums {
 }
 
 fn axis_sums(eq: &Equilibrium, axis: &AxisField) -> Result<AxisSums, Error> {
+    ensure(axis.line.len() == AXIS_POINTS, BAD, "the axis buffer has the wrong size")?;
     ensure(axis.field.len() == AXIS_POINTS, BAD, "the axis buffer has the wrong size")?;
     let mut sums = AxisSums::default();
     for index in 0..AXIS_POINTS {
@@ -175,6 +177,12 @@ pub fn check_consistency(
     axis: &AxisField,
     check_field: bool,
 ) -> Result<Consistency, Error> {
+    ensure(
+        eq.nfp >= 1 && periods_in_file >= 1,
+        BAD,
+        "the number of field periods must be at least 1",
+    )?;
+    ensure(coils.currents.len() == coils.n_coils, BAD, "the coil buffers are damaged")?;
     ensure(
         tolerances.linkage > 0.0 && tolerances.axis_misalignment > 0.0 && tolerances.field > 0.0,
         Code::Settings,

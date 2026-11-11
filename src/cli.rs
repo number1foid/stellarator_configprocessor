@@ -400,6 +400,8 @@ pub fn prepare<I: Iterator<Item = String>, W: Write>(
     let eq = read_wout(&bytes)?;
     let coil_set = read_makegrid(&text, &options.groups)?;
     let work = new_workspace(&eq, &coil_set, &options.settings)?;
+    let matching = work.coils.n_coils == coil_set.currents.len();
+    ensure(matching, Code::Numeric, "the workspace does not match the coil set")?;
     let config_file = open_output(&options.output)?;
     let report_file =
         if options.report.is_empty() { None } else { Some(open_output(&options.report)?) };
@@ -489,6 +491,7 @@ pub fn report_failure<E: Write>(
     error: &Error,
     session: Option<&Session>,
 ) -> Result<u8, Error> {
+    ensure(!error.message.is_empty(), Code::Numeric, "an error has no message")?;
     writeln!(err, "error: {error}")?;
     if error.code != Code::Inconsistent {
         return Ok(EXIT_INPUT);

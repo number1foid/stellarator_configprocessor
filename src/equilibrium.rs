@@ -21,17 +21,17 @@ const BAD: Code = Code::Equilibrium;
 /// A value the file does not contain is not-a-number.
 #[derive(Debug, Clone, Copy)]
 pub struct Reported {
-    /// Major radius [m].
+    /// Major radius `[m]`.
     pub rmajor_p: f64,
-    /// Minor radius [m].
+    /// Minor radius `[m]`.
     pub aminor_p: f64,
     /// Aspect ratio.
     pub aspect: f64,
     /// Plasma volume [m^3].
     pub volume_p: f64,
-    /// Field on axis [T].
+    /// Field on axis `[T]`.
     pub b0: f64,
-    /// Volume-averaged field [T].
+    /// Volume-averaged field `[T]`.
     pub volavg_b: f64,
     /// Total beta.
     pub betatotal: f64,
@@ -56,19 +56,19 @@ pub struct Equilibrium {
     pub xm: Vec<f64>,
     /// Toroidal mode numbers including `nfp`, one per mode.
     pub xn: Vec<f64>,
-    /// `R` cosine coefficients, radial index times `n_modes` plus mode [m].
+    /// `R` cosine coefficients, radial index times `n_modes` plus mode `[m]`.
     pub r_cos: Vec<f64>,
-    /// `Z` sine coefficients, same layout [m].
+    /// `Z` sine coefficients, same layout `[m]`.
     pub z_sin: Vec<f64>,
-    /// `R` sine coefficients; empty unless `lasym` [m].
+    /// `R` sine coefficients; empty unless `lasym` `[m]`.
     pub r_sin: Vec<f64>,
-    /// `Z` cosine coefficients; empty unless `lasym` [m].
+    /// `Z` cosine coefficients; empty unless `lasym` `[m]`.
     pub z_cos: Vec<f64>,
     /// Toroidal mode numbers of the field strength on the axis.
     pub axis_xn: Vec<f64>,
-    /// Cosine coefficients of the field strength on the axis [T].
+    /// Cosine coefficients of the field strength on the axis `[T]`.
     pub axis_cos: Vec<f64>,
-    /// Sine coefficients of the field strength on the axis [T].
+    /// Sine coefficients of the field strength on the axis `[T]`.
     pub axis_sin: Vec<f64>,
     /// Scalars as reported in the file.
     pub reported: Reported,
@@ -77,22 +77,22 @@ pub struct Equilibrium {
 /// Fourier coefficients of one flux surface; a reusable buffer.
 #[derive(Debug, Clone)]
 pub struct Coefficients {
-    /// `R` cosine coefficients [m].
+    /// `R` cosine coefficients `[m]`.
     pub rc: Vec<f64>,
-    /// `Z` sine coefficients [m].
+    /// `Z` sine coefficients `[m]`.
     pub zs: Vec<f64>,
-    /// `R` sine coefficients; unused unless `lasym` [m].
+    /// `R` sine coefficients; unused unless `lasym` `[m]`.
     pub rs: Vec<f64>,
-    /// `Z` cosine coefficients; unused unless `lasym` [m].
+    /// `Z` cosine coefficients; unused unless `lasym` `[m]`.
     pub zc: Vec<f64>,
 }
 
 /// Cylindrical coordinates of a surface point and their angle derivatives.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct SurfacePoint {
-    /// Cylindrical radius [m].
+    /// Cylindrical radius `[m]`.
     pub r: f64,
-    /// Height [m].
+    /// Height `[m]`.
     pub z: f64,
     /// `dR/dtheta`.
     pub r_t: f64,
@@ -376,7 +376,7 @@ pub fn cartesian(point: &SurfacePoint, phi: f64) -> Vec3 {
     [point.r * phi.cos(), point.r * phi.sin(), point.z]
 }
 
-/// Field strength on the magnetic axis [T] at toroidal angle `phi`.
+/// Field strength on the magnetic axis `[T]` at toroidal angle `phi`.
 ///
 /// # Errors
 /// Returns an error if `phi` or the result is not finite.

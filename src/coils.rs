@@ -16,17 +16,17 @@ pub struct SampledCoils {
     pub n_coils: usize,
     /// Number of samples per coil.
     pub n_points: usize,
-    /// Sample positions [m].
+    /// Sample positions `[m]`.
     pub points: Vec<Vec3>,
     /// Unit tangents at the samples.
     pub tangents: Vec<Vec3>,
     /// Curvature at the samples [1/m].
     pub curvature: Vec<f64>,
-    /// Length of each coil [m].
+    /// Length of each coil `[m]`.
     pub lengths: Vec<f64>,
-    /// Current of each coil [A].
+    /// Current of each coil `[A]`.
     pub currents: Vec<f64>,
-    /// Mean position of the samples of each coil [m].
+    /// Mean position of the samples of each coil `[m]`.
     pub centroids: Vec<Vec3>,
 }
 
@@ -72,7 +72,7 @@ pub fn coil_points(coils: &SampledCoils, coil: usize) -> Result<&[Vec3], Error> 
     Ok(&coils.points[coil * coils.n_points..(coil + 1) * coils.n_points])
 }
 
-/// Arc length represented by each sample of one coil [m].
+/// Arc length represented by each sample of one coil `[m]`.
 ///
 /// # Errors
 /// Returns an error if `coil` is not a valid coil index or its length is
@@ -94,6 +94,7 @@ pub fn sample_coils(
     work: &mut SplineWork,
     out: &mut SampledCoils,
 ) -> Result<(), Error> {
+    ensure(out.n_points >= 8, BAD, "need at least 8 samples per curve")?;
     let n = out.n_points;
     ensure(set.currents.len() == out.n_coils, BAD, "the coil buffers do not match the coil set")?;
     ensure(set.offsets.len() == out.n_coils + 1, BAD, "the coil set is damaged")?;

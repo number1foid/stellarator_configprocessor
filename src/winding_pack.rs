@@ -25,8 +25,8 @@ use crate::coilgeom::SymmetryClasses;
 use crate::coils::SampledCoils;
 use crate::error::{ensure, Code, Error};
 use crate::field::{add_polygon_field, filament_field};
-use crate::limits::{MAX_CORNERS, MAX_SCAN, MAX_SUB};
-use crate::num::{add, cross, dot, is_finite, norm, real, scale, sub, Vec3, MU0};
+use crate::limits::{MAX_COILS, MAX_CORNERS, MAX_SCAN, MAX_SUB};
+use crate::num::{add, cross, dot, finite_vector, norm, real, scale, sub, Vec3, MU0};
 use core::f64::consts::TAU;
 
 const BAD: Code = Code::Numeric;
@@ -38,13 +38,13 @@ const NEAR_FACTOR: f64 = 3.0;
 /// Rectangular winding pack cross-section.
 #[derive(Debug, Clone, Copy)]
 pub struct WindingPack {
-    /// Width in the coil's in-plane normal direction [m].
+    /// Width in the coil's in-plane normal direction `[m]`.
     pub radial: f64,
-    /// Width in the toroidal direction [m].
+    /// Width in the toroidal direction `[m]`.
     pub toroidal: f64,
     /// Cross-section area [m^2].
     pub area: f64,
-    /// Length of the diagonal [m].
+    /// Length of the diagonal `[m]`.
     pub diagonal: f64,
 }
 
@@ -66,13 +66,13 @@ pub struct PackLayout {
     pub n_radial: usize,
     /// Filaments across the toroidal width.
     pub n_toroidal: usize,
-    /// Radial offsets of the filaments [m].
+    /// Radial offsets of the filaments `[m]`.
     pub centre_u: [f64; MAX_SUB],
-    /// Toroidal offsets of the filaments [m].
+    /// Toroidal offsets of the filaments `[m]`.
     pub centre_v: [f64; MAX_SUB],
-    /// Radial offsets of the field points [m].
+    /// Radial offsets of the field points `[m]`.
     pub corner_u: [f64; MAX_CORNERS],
-    /// Toroidal offsets of the field points [m].
+    /// Toroidal offsets of the field points `[m]`.
     pub corner_v: [f64; MAX_CORNERS],
     /// Uniform bar minus filament bundle, radial kernel, per field point.
     pub delta_u: [[f64; MAX_CORNERS]; MAX_CORNERS],
@@ -85,9 +85,9 @@ pub struct PackLayout {
 /// A field point in a winding pack and the field there.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct FieldSample {
-    /// Position [m].
+    /// Position `[m]`.
     pub point: Vec3,
-    /// Field [T].
+    /// Field `[T]`.
     pub field: Vec3,
 }
 
@@ -105,7 +105,7 @@ pub struct PackWork {
     /// Field points of the reference winding pack and the field there, per
     /// class and station.
     pub samples: Vec<FieldSample>,
-    /// Largest field strength in the cross-section, per class and station [T].
+    /// Largest field strength in the cross-section, per class and station `[T]`.
     pub station_peak: Vec<f64>,
 }
 
@@ -118,11 +118,11 @@ pub struct PeakFieldFit {
     pub a2: f64,
     /// Number of winding pack sizes used.
     pub count: usize,
-    /// Radial width of each size [m].
+    /// Radial width of each size `[m]`.
     pub widths: [f64; MAX_SCAN],
-    /// Computed peak field of each size [T].
+    /// Computed peak field of each size `[T]`.
     pub peaks: [f64; MAX_SCAN],
-    /// Value of the fit at each size [T].
+    /// Value of the fit at each size `[T]`.
     pub fitted: [f64; MAX_SCAN],
     /// Largest relative deviation of the fit from the computed peak fields.
     pub max_relative_error: f64,
@@ -165,6 +165,7 @@ pub fn new_frames(n_coils: usize, n_points: usize) -> Result<Frames, Error> {
 /// Returns an error if the buffer does not match the coils, or a coil runs
 /// nearly parallel to the toroidal direction.
 pub fn coil_frames(coils: &SampledCoils, frames: &mut Frames) -> Result<(), Error> {
+    ensure(coils.centroids.len() == coils.n_coils, BAD, "the coil buffers are damaged")?;
     let n = coils.n_points;
     ensure(
         frames.radial.len() == coils.points.len(),
@@ -242,6 +243,7 @@ pub fn pack_layout(
     n_radial: usize,
     n_toroidal: usize,
 ) -> Result<PackLayout, Error> {
+    ensure(wp.area > 0.0, BAD, "the winding pack has no area")?;
     ensure(
         n_radial >= 1 && n_toroidal >= 1,
         Code::Settings,
@@ -320,6 +322,7 @@ pub fn new_pack_work(
     n_points: usize,
     n_sub: (usize, usize),
 ) -> Result<PackWork, Error> {
+    ensure(n_coils <= MAX_COILS, Code::Limit, "too many coils")?;
     ensure(n_coils >= 1 && n_points >= 3, BAD, "at least one coil with three samples is needed")?;
     ensure(
         (1..=MAX_SUB).contains(&n_sub.0) && (1..=MAX_SUB).contains(&n_sub.1),
@@ -353,6 +356,11 @@ pub fn build_bundles(
     layout: &PackLayout,
     bundle: &mut [Vec3],
 ) -> Result<(), Error> {
+    ensure(
+        frames.toroidal.len() == coils.points.len(),
+        BAD,
+        "the frame buffer does not match the coils",
+    )?;
     let n = coils.n_points;
     let filaments = layout.n_radial * layout.n_toroidal;
     ensure(
@@ -434,6 +442,8 @@ fn bundle_field(
     bundle: &[Vec3],
     close: &[bool],
 ) -> Result<Vec3, Error> {
+    let needed = coils.n_coils * filaments * coils.n_points;
+    ensure(bundle.len() >= needed, Code::Limit, "the filament buffer is too small")?;
     ensure(close.len() == coils.n_coils, BAD, "one flag per coil is needed")?;
     ensure(filaments >= 1, BAD, "at least one filament is needed")?;
     let n = coils.n_points;
@@ -461,6 +471,11 @@ fn outer_fields(
     index: usize,
     far: &[bool],
 ) -> Result<[Vec3; 4], Error> {
+    ensure(
+        frames.radial.len() == coils.points.len(),
+        BAD,
+        "the frame buffer does not match the coils",
+    )?;
     ensure(index < coils.points.len(), BAD, "a sample index is out of range")?;
     ensure(far.len() == coils.n_coils, BAD, "one flag per coil is needed")?;
     let (nr, nt) = (layout.n_radial, layout.n_toroidal);
@@ -487,6 +502,9 @@ pub fn station_field(
     index: usize,
     out: &mut [FieldSample],
 ) -> Result<f64, Error> {
+    ensure(index < coils.points.len(), BAD, "a sample index is out of range")?;
+    let flags = masks.0.len() == coils.n_coils && masks.1.len() == coils.n_coils;
+    ensure(flags, BAD, "one flag per coil is needed")?;
     let (nr, nt) = (layout.n_radial, layout.n_toroidal);
     let stride = nt + 1;
     ensure(out.len() >= (nr + 1) * stride, BAD, "the station buffer is too small")?;
@@ -509,7 +527,7 @@ pub fn station_field(
             let local =
                 add(scale(lift_u, layout.delta_u[a][b]), scale(lift_v, layout.delta_v[a][b]));
             field = add(field, scale(local, density));
-            ensure(is_finite(field), BAD, "the field in the winding pack is not finite")?;
+            ensure(finite_vector(field), BAD, "the field in the winding pack is not finite")?;
             out[a * stride + b] = FieldSample { point, field };
             peak = peak.max(norm(field));
         }
@@ -519,7 +537,7 @@ pub fn station_field(
 
 /// Field in the reference winding pack of every class representative, at
 /// every sample. Fills `work.samples` and `work.station_peak`
-/// and returns the largest field strength found [T].
+/// and returns the largest field strength found `[T]`.
 ///
 /// # Errors
 /// Returns an error if the buffers do not match, or a field cannot be
@@ -531,6 +549,10 @@ pub fn reference_pack_field(
     classes: &SymmetryClasses,
     work: &mut PackWork,
 ) -> Result<f64, Error> {
+    let rows = classes.n_classes * coils.n_coils;
+    ensure(work.distances.len() >= rows, BAD, "one distance row per class is needed")?;
+    let stations = classes.n_classes * coils.n_points;
+    ensure(work.station_peak.len() >= stations, Code::Limit, "the pack buffer is too small")?;
     let n = coils.n_points;
     let corners = (layout.n_radial + 1) * (layout.n_toroidal + 1);
     ensure(
@@ -579,6 +601,8 @@ pub fn scan_pack_peak(
     work: &mut PackWork,
     reference_peak: f64,
 ) -> Result<f64, Error> {
+    let rows = classes.n_classes * coils.n_coils;
+    ensure(work.distances.len() >= rows, BAD, "one distance row per class is needed")?;
     let n = coils.n_points;
     ensure(reference_peak > 0.0, BAD, "the reference peak field must be positive")?;
     ensure(
@@ -642,7 +666,7 @@ fn section_distance(
     du.max(0.0).hypot(dv.max(0.0)) + du.max(dv).min(0.0)
 }
 
-/// Smallest gap between the winding packs of different coils [m].
+/// Smallest gap between the winding packs of different coils `[m]`.
 ///
 /// For every corner of the winding pack of each class representative, the
 /// nearest cross-section of every nearby coil is located and the distance
@@ -661,6 +685,7 @@ pub fn pack_clearance(
     classes: &SymmetryClasses,
     distances: &[f64],
 ) -> Result<f64, Error> {
+    ensure(wp.radial > 0.0 && wp.toroidal > 0.0, BAD, "winding pack dimensions must be positive")?;
     let n = coils.n_points;
     ensure(
         distances.len() >= classes.n_classes * coils.n_coils,
@@ -703,12 +728,6 @@ pub fn pack_clearance(
     Ok(clearance)
 }
 
-/// PROCESS's peak-field formula (`bmax_from_awp`) [T].
-#[must_use]
-pub fn process_bmax(scale_factor: f64, r_major: f64, a1: f64, a2: f64, radial_width: f64) -> f64 {
-    scale_factor * (a1 + a2 * r_major / radial_width)
-}
-
 /// Least-squares fit of `a1` and `a2` in PROCESS's peak-field formula
 /// `B = 0.2 * I[MA] * N / (R - a) * (a1 + a2 * R / width)`.
 ///
@@ -725,6 +744,7 @@ pub fn fit_peak_field(
     n_coils: usize,
     radii: (f64, f64),
 ) -> Result<PeakFieldFit, Error> {
+    ensure(radii.0.is_finite() && radii.1.is_finite(), BAD, "the coil radii are not finite")?;
     let (widths, peaks) = sizes;
     let (r_major, r_minor) = radii;
     ensure(
@@ -768,7 +788,8 @@ pub fn fit_peak_field(
         max_relative_error: 0.0,
     };
     for index in 0..count {
-        fit.fitted[index] = process_bmax(factor, r_major, a1, a2, widths[index]);
+        // PROCESS's peak-field formula (`bmax_from_awp`).
+        fit.fitted[index] = factor * (a1 + a2 * r_major / widths[index]);
         fit.max_relative_error =
             fit.max_relative_error.max((fit.fitted[index] / peaks[index] - 1.0).abs());
     }

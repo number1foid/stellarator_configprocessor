@@ -3,39 +3,46 @@ name: tests
 on:
   push:
   pull_request:
+  # Rule 10 asks for a daily analysis. GitHub starts scheduled runs only from
+  # the default branch.
+  schedule:
+    - cron: "17 4 * * *"
 
 jobs:
-  test:
+  check:
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        python-version: ["3.10", "3.13"]
     steps:
       - uses: actions/checkout@v4
 
+      - name: Install Rust (stable, with rustfmt and Clippy)
+        run: |
+          rustup toolchain install stable --profile minimal --component rustfmt,clippy
+          rustup default stable
+
+      - name: Format (one statement per line)
+        run: cargo fmt --all -- --check
+
+      - name: Compiler and Clippy at the strictest level (zero findings allowed)
+        run: cargo clippy --workspace --all-targets --locked
+
+      - name: Documentation builds without findings
+        run: cargo doc --workspace --no-deps --locked
+
       - uses: actions/setup-python@v5
         with:
-          python-version: ${{ matrix.python-version }}
-          cache: pip
+          python-version: "3.12"
 
-      - name: Install
-        run: pip install -e ".[test,lint]"
+      - name: Fetch the public W7-X and HSX reference files
+        run: |
+          pip install numpy
+          python scripts/fetch_reference_data.py
 
-      - name: Lint (ruff, zero findings allowed)
-        run: ruff check .
+      - name: Tests (rule checker, no-allocation test, analytic and reference cases)
+        run: cargo test --workspace --release --locked
 
-      - name: Type check (mypy, zero findings allowed)
-        run: mypy
-
-      - name: Compile with warnings as errors
-        run: python -W error -m compileall -q -f src
-
-      - name: Install SIMSOPT for the cross-check (optional)
-        run: pip install simsopt || echo "SIMSOPT not available; its tests will be skipped"
-
-      - name: Fetch public W7-X reference files
-        run: python scripts/fetch_reference_data.py
-
-      - name: Test
-        run: pytest -ra
+      - name: Run the program with the allocator locked
+        run: >
+          cargo run --release --locked --
+          data/local/wout_w7x_standard.nc data/local/coils.w7x_standard
+          --wp-radial 0.18 --wp-toroidal 0.15 --epseff 0.0095 --neutron-peakfactor 1.6
+          --bt-ref 3.0 --quiet --output stella_conf.json --report report.json

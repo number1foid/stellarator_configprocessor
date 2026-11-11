@@ -56,7 +56,7 @@ pub fn norm(a: Vec3) -> f64 {
 
 /// Whether all three components are finite.
 #[must_use]
-pub fn is_finite(a: Vec3) -> bool {
+pub fn finite_vector(a: Vec3) -> bool {
     a[0].is_finite() && a[1].is_finite() && a[2].is_finite()
 }
 
@@ -102,6 +102,7 @@ pub fn floor_count(value: f64, limit: usize) -> Result<usize, Error> {
 /// # Errors
 /// Returns an error if `value` is negative, not finite or above `limit`.
 pub fn ceil_count(value: f64, limit: usize) -> Result<usize, Error> {
+    ensure(value.is_finite(), Code::Numeric, "a count was computed from a non-finite number")?;
     let below = floor_count(value, limit)?;
     let count = if real(below)? < value { below + 1 } else { below };
     ensure(count <= limit, Code::Limit, "a computed count exceeds its limit")?;

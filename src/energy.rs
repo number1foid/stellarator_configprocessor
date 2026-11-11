@@ -22,7 +22,7 @@ const RESOLUTION: f64 = 4.0;
 /// Buffers for one coil resampled for the self-inductance integral.
 #[derive(Debug, Clone)]
 pub struct InductanceWork {
-    /// Sample positions [m].
+    /// Sample positions `[m]`.
     points: Vec<Vec3>,
     /// Unit tangents.
     tangents: Vec<Vec3>,
@@ -33,11 +33,11 @@ pub struct InductanceWork {
 /// Energy of the coil set.
 #[derive(Debug, Clone, Copy)]
 pub struct EnergyResult {
-    /// Total magnetic energy [J].
+    /// Total magnetic energy `[J]`.
     pub energy: f64,
-    /// Current per coil used for the effective inductance [A].
+    /// Current per coil used for the effective inductance `[A]`.
     pub reference_current: f64,
-    /// `2 W / I^2` with `I` the reference current per coil [H].
+    /// `2 W / I^2` with `I` the reference current per coil `[H]`.
     pub effective_inductance: f64,
 }
 
@@ -85,7 +85,7 @@ pub fn gmd_squared(wp: &WindingPack) -> Result<f64, Error> {
     Ok(squared)
 }
 
-/// Self-inductance of one closed filament with a rectangular winding pack [H].
+/// Self-inductance of one closed filament with a rectangular winding pack `[H]`.
 ///
 /// The filament is resampled so that the spacing is a quarter of the GMD,
 /// which resolves the regularised kernel.
@@ -99,6 +99,7 @@ pub fn self_inductance(
     spline: &mut SplineWork,
     work: &mut InductanceWork,
 ) -> Result<f64, Error> {
+    ensure(points.len() >= 3, BAD, "a coil needs at least three samples")?;
     let softening = gmd_squared(wp)?;
     let coarse = points.len().max(16);
     ensure(coarse <= MAX_INDUCTANCE_SAMPLES, Code::Limit, "a coil has too many samples")?;
@@ -136,12 +137,13 @@ pub fn self_inductance(
     Ok(MU0 / (4.0 * PI) * total * step * step)
 }
 
-/// Flux through coil `coil` produced by all other coils [Wb].
+/// Flux through coil `coil` produced by all other coils `[Wb]`.
 ///
 /// # Errors
 /// Returns an error if `coil` is not a valid index or the result is not
 /// finite.
 pub fn flux_from_others(coils: &SampledCoils, coil: usize) -> Result<f64, Error> {
+    ensure(coils.tangents.len() == coils.points.len(), BAD, "the coil buffers are damaged")?;
     ensure(coil < coils.n_coils, BAD, "a coil index is out of range")?;
     let n = coils.n_points;
     let own = coil_points(coils, coil)?;
@@ -182,6 +184,7 @@ pub fn magnetic_energy(
     work: &mut InductanceWork,
     self_inductances: &mut [f64],
 ) -> Result<EnergyResult, Error> {
+    ensure(coils.currents.len() == coils.n_coils, BAD, "the coil buffers are damaged")?;
     ensure(classes.n_classes >= 1, BAD, "at least one symmetry class is needed")?;
     ensure(
         self_inductances.len() >= classes.n_classes,

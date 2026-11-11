@@ -21,14 +21,27 @@ van PROCESS noemt om dit bestand te maken, pre-sPROCESS, is niet openbaar
 beschikbaar. Dit project berekent hetzelfde bestand uit twee gangbare
 invoerbestanden:
 
-- een plasma-evenwicht: VMEC-`wout`-bestand (NetCDF);
+- een plasma-evenwicht: VMEC-`wout`-bestand (NetCDF, klassiek formaat);
 - een spoelenset: MAKEGRID-bestand `coils.*` met filamentkrommen en stromen.
 
 De methode volgt Lion et al., *Nuclear Fusion* 61 (2021) 126021.
 
+**Deze tak (`rust`) bevat de Rust-versie**, geschreven volgens de tien regels
+van "The Power of Ten" van NASA/JPL voor veiligheidskritische code. De
+oorspronkelijke Python-versie staat op de tak `main`. Beide geven dezelfde
+resultaten.
+
 ## Status
 
 Ontwikkelversie, nog niet uitgebracht. Geschreven voor PROCESS 3.4.2.
+
+- De Rust-versie geeft voor W7-X, HSX en een herschaalde W7-X dezelfde
+  waarden als de Python-versie, tot op beter dan 1e-10, en is ongeveer zes
+  keer zo snel (9 s tegenover 51 s voor W7-X).
+- De code voldoet aan de tien regels; een geautomatiseerde controle bewaakt
+  dat. Zie [docs/power_of_ten.md](docs/power_of_ten.md) voor wat dat precies
+  inhoudt, hoe het wordt gecontroleerd en waar een regel voor Rust is
+  uitgelegd.
 
 - Alle 35 waarden die PROCESS leest, worden geschreven. Twee daarvan
   (`epseff`, `neutron_peakfactor`) worden doorgegeven vanaf de opdrachtregel
@@ -40,11 +53,16 @@ Ontwikkelversie, nog niet uitgebracht. Geschreven voor PROCESS 3.4.2.
 
 ## Installatie
 
-Python 3.10 of nieuwer. Afhankelijkheden: NumPy en netCDF4.
+Installeer de Rust-toolchain via <https://rustup.rs> (versie 1.82 of nieuwer).
+Er zijn geen andere afhankelijkheden.
 
 ```
-pip install -e .
+cargo build --release
 ```
+
+Het programma staat daarna in `target/release/stellarator-configprocessor`
+(`.exe` op Windows). Met `cargo install --path .` komt het in de `bin`-map
+van Cargo, zodat het overal te starten is.
 
 ## Gebruik
 
@@ -72,7 +90,8 @@ De documenten zelf zijn in het Engels.
 
 | Document | Inhoud |
 |---|---|
-| [docs/user_guide.md](docs/user_guide.md) | Opties, invoer, uitgewerkt W7-X-voorbeeld, Python-interface, gebruiksbeperkingen |
+| [docs/user_guide.md](docs/user_guide.md) | Opties, invoer, uitgewerkt W7-X-voorbeeld, gebruik als bibliotheek, gebruiksbeperkingen |
+| [docs/power_of_ten.md](docs/power_of_ten.md) | Hoe de code aan elk van de tien regels van NASA/JPL voldoet en hoe dat wordt gecontroleerd |
 | [docs/schema.md](docs/schema.md) | Elke sleutel van `stella_conf.json`: eenheid, hoe PROCESS haar gebruikt, hoe ze wordt berekend; referentiewaarden |
 | [docs/w7x_comparison.md](docs/w7x_comparison.md) | PROCESS-run met het gegenereerde W7-X-bestand tegenover de ingebouwde W7-X-set |
 | [docs/hsx_check.md](docs/hsx_check.md) | Tweede machine (HSX): controle op algemene toepasbaarheid en wat die aan het licht bracht |
@@ -80,28 +99,36 @@ De documenten zelf zijn in het Engels.
 ## Verificatie
 
 ```
-pip install -e ".[test]"
-python scripts/fetch_reference_data.py    # optioneel: openbare W7-X- en HSX-bestanden
-pytest
+python scripts/fetch_reference_data.py    # optioneel: openbare W7-X- en HSX-bestanden (Python met NumPy)
+cargo fmt --all -- --check
+cargo clippy --workspace --all-targets
+cargo test --workspace --release
 ```
+
+`cargo test` voert 42 tests uit: de regelcontrole, de test dat tijdens de
+berekening geen geheugen wordt aangevraagd, en de functionele tests.
 
 | Grootheid | Gecontroleerd tegen | Overeenkomst |
 |---|---|---|
-| Plasmavolume, -oppervlak, stralen | cirkelvormige torus (analytisch); de waarden van VMEC zelf voor W7-X | 1e-12; 1e-10 |
-| Veld van een filament | cirkelvormige lus en rechte draad (analytisch) | 1e-4 |
+| Alle uitvoerwaarden voor W7-X, HSX en een herschaalde W7-X | de Python-versie | 1e-10 (test eist 1e-8) |
+| Plasmavolume, -oppervlak, stralen | cirkelvormige torus (analytisch); de waarden van VMEC zelf voor W7-X | 1e-12; 1e-9 |
+| Veld van een filament | cirkelvormige lus en rechte draad (analytisch) | 1e-4; 1e-6 |
 | Veld op de as van de W7-X-spoelen | het vacuümevenwicht van W7-X | 5e-6 |
-| Veld binnen de geleider | rechte rechthoekige staaf (gesloten uitdrukking) | 2%, beperkt door de kromming van de lus |
-| Zelfinductie | formule voor een cirkelvormige lus; volume-integraal van B^2 | 0,2%; 2% |
-| Wederzijdse inductie | coaxiale lussen (elliptische integralen) | 1e-4 |
-| Hoepelkracht | formule voor een cirkelvormige lus | 2% |
-| Netto kracht op een spoel | afgeleide van de magnetische energie (virtuele arbeid) | 0,6% |
-| Veld op de as, spoellengtes (W7-X) | SIMSOPT, in CI | 1e-3; 1e-4 |
+| Zelfinductie | formule voor een dunne cirkelvormige ring | 0,2% |
+| Kern van de rechthoekige staaf | limiet ver weg en symmetrie in het midden | 1e-5 |
+| Fit van a1 en a2 | teruggevonden uit zelf opgegeven waarden | 1e-10 |
+| Torus met 20 cirkelvormige spoelen | analytische geometrie, ideale toroïdale spoel | 1e-10 tot 1% |
+| Herschaling | schaalwetten voor lengte, veld, stroom en inductie | 1e-8 |
 | Volledig W7-X-resultaat | ingebouwde W7X-50-waarden van PROCESS | zie docs/w7x_comparison.md |
 | Volledig HSX-resultaat | consistentie met het evenwicht; plausibiliteit | zie docs/hsx_check.md |
 
-Tests die de W7-X- of HSX-bestanden nodig hebben, worden overgeslagen als die
-bestanden ontbreken. De kruiscontrole met SIMSOPT wordt overgeslagen als
-SIMSOPT niet is geïnstalleerd.
+Tests die de W7-X- of HSX-bestanden nodig hebben, melden dat ze zijn
+overgeslagen als die bestanden ontbreken.
+
+De Python-versie op `main` heeft daarnaast analytische tests voor de
+wederzijdse inductie, de hoepelkracht, virtuele arbeid en het veld binnen een
+staaf, en een kruiscontrole met SIMSOPT. Die zijn niet naar Rust overgezet;
+voor de Rust-versie gelden ze via de overeenkomst met de Python-resultaten.
 
 ## Bekende problemen
 
@@ -143,6 +170,26 @@ SIMSOPT niet is geïnstalleerd.
   is alleen via de documenten aan PROCESS 3.4.2 gekoppeld, zodat een
   schemawijziging in PROCESS niet automatisch wordt opgemerkt.
 
+### Alleen in de Rust-versie
+
+- **Alleen het klassieke NetCDF-formaat.** `wout`-bestanden in NetCDF-4
+  (HDF5) worden geweigerd; zet ze om met `nccopy -k classic`. VMEC2000
+  schrijft standaard het klassieke formaat.
+- **Vaste bovengrenzen.** Bijvoorbeeld 512 spoelen, 1024 punten per spoel en
+  12 filamenten per zijde van het wikkelpakket. Invoer daarboven wordt
+  geweigerd. Zie `src/limits.rs`.
+- **Eén processorkern.** Threads vragen geheugen aan en zijn daarom niet
+  gebruikt.
+- **Leeg uitvoerbestand na een mislukte run.** De uitvoerbestanden worden
+  vóór de berekening geopend. Een bestaand bestand blijft bij een fout
+  ongewijzigd; een nieuw bestand blijft leeg achter.
+- **Niet alle analytische tests zijn overgezet**, zie Verificatie.
+- **De dagelijkse statische analyse draait nog niet.** GitHub start geplande
+  runs alleen vanaf de standaardtak; op deze tak draait de analyse bij elke
+  push.
+- **De regels gelden voor het programma zelf**, niet voor de tests, de
+  Python-hulpscripts en de standaardbibliotheek van Rust.
+
 ### Bewuste keuzes
 
 - **Alleen modulaire spoelen.** Elke spoel moet poloïdaal om het plasma
@@ -151,6 +198,8 @@ SIMSOPT niet is geïnstalleerd.
   ongelijke stromen worden teruggebracht tot hun gemiddelde absolute stroom,
   met een waarschuwing. Spoelen zonder stroom worden genegeerd.
 - **Invoerformaten.** Alleen VMEC-`wout` en MAKEGRID.
+- **Geen externe bibliotheken.** Geen enkele bestaande Rust-bibliotheek is
+  volgens deze regels geschreven, dus de lezers en schrijvers zijn eigen code.
 
 ### In PROCESS zelf
 
@@ -185,14 +234,26 @@ The tool that PROCESS's documentation names for producing this file,
 pre-sPROCESS, is not publicly available. This project computes the same file
 from two standard inputs:
 
-- a plasma equilibrium: VMEC `wout` file (NetCDF);
+- a plasma equilibrium: VMEC `wout` file (NetCDF, classic format);
 - a coil set: MAKEGRID `coils.*` file with filament curves and currents.
 
 The method follows Lion et al., *Nuclear Fusion* 61 (2021) 126021.
 
+**This branch (`rust`) holds the Rust version**, written to the ten rules of
+NASA/JPL's "The Power of Ten" for safety-critical code. The original Python
+version is on the `main` branch. Both give the same results.
+
 ## Status
 
 Development version, not yet released. Written against PROCESS 3.4.2.
+
+- For W7-X, HSX and a rescaled W7-X the Rust version gives the same values
+  as the Python version, to better than 1e-10, and is about six times faster
+  (9 s against 51 s for W7-X).
+- The code meets the ten rules, and an automated check keeps it that way.
+  See [docs/power_of_ten.md](docs/power_of_ten.md) for what that means
+  exactly, how it is checked, and where a rule had to be interpreted for
+  Rust.
 
 - All 35 values PROCESS reads are written. Two of them (`epseff`,
   `neutron_peakfactor`) are passed through from the command line, not
@@ -204,11 +265,16 @@ Development version, not yet released. Written against PROCESS 3.4.2.
 
 ## Install
 
-Python 3.10 or newer. Dependencies: NumPy and netCDF4.
+Install the Rust toolchain from <https://rustup.rs> (version 1.82 or newer).
+There are no other dependencies.
 
 ```
-pip install -e .
+cargo build --release
 ```
+
+The program is then `target/release/stellarator-configprocessor` (`.exe` on
+Windows). `cargo install --path .` copies it to Cargo's `bin` folder, so that
+it can be run from anywhere.
 
 ## Use
 
@@ -233,7 +299,8 @@ example from files to a PROCESS run.
 
 | Document | Content |
 |---|---|
-| [docs/user_guide.md](docs/user_guide.md) | Options, inputs, worked W7-X example, Python interface, usage limits |
+| [docs/user_guide.md](docs/user_guide.md) | Options, inputs, worked W7-X example, use as a library, usage limits |
+| [docs/power_of_ten.md](docs/power_of_ten.md) | How the code meets each of the ten NASA/JPL rules and how that is checked |
 | [docs/schema.md](docs/schema.md) | Every key of `stella_conf.json`: unit, how PROCESS uses it, how it is computed; reference values |
 | [docs/w7x_comparison.md](docs/w7x_comparison.md) | PROCESS run with the generated W7-X file against the built-in W7-X set |
 | [docs/hsx_check.md](docs/hsx_check.md) | Second machine (HSX): generality check and what it exposed |
@@ -241,27 +308,36 @@ example from files to a PROCESS run.
 ## Verification
 
 ```
-pip install -e ".[test]"
-python scripts/fetch_reference_data.py    # optional: public W7-X and HSX files
-pytest
+python scripts/fetch_reference_data.py    # optional: public W7-X and HSX files (Python with NumPy)
+cargo fmt --all -- --check
+cargo clippy --workspace --all-targets
+cargo test --workspace --release
 ```
+
+`cargo test` runs 42 tests: the rule checker, the test that no memory is
+requested during the calculation, and the functional tests.
 
 | Quantity | Checked against | Agreement |
 |---|---|---|
-| Plasma volume, area, radii | circular torus (analytic); VMEC's own values for W7-X | 1e-12; 1e-10 |
-| Field of a filament | circular loop and straight wire (analytic) | 1e-4 |
+| All output values for W7-X, HSX and a rescaled W7-X | the Python version | 1e-10 (the test requires 1e-8) |
+| Plasma volume, area, radii | circular torus (analytic); VMEC's own values for W7-X | 1e-12; 1e-9 |
+| Field of a filament | circular loop and straight wire (analytic) | 1e-4; 1e-6 |
 | Field on axis of W7-X coils | the W7-X vacuum equilibrium | 5e-6 |
-| Field inside the conductor | straight rectangular bar (closed form) | 2%, limited by loop curvature |
-| Self-inductance | circular loop formula; volume integral of B^2 | 0.2%; 2% |
-| Mutual inductance | coaxial loops (elliptic integrals) | 1e-4 |
-| Hoop force | circular loop formula | 2% |
-| Net coil force | derivative of the magnetic energy (virtual work) | 0.6% |
-| Field on axis, coil lengths (W7-X) | SIMSOPT, in CI | 1e-3; 1e-4 |
+| Self-inductance | formula for a thin circular ring | 0.2% |
+| Kernel of the rectangular bar | far-field limit and symmetry at the centre | 1e-5 |
+| Fit of a1 and a2 | recovered from prescribed values | 1e-10 |
+| Torus with 20 circular coils | analytic geometry, ideal toroidal solenoid | 1e-10 to 1% |
+| Rescaling | scaling laws for length, field, current and inductance | 1e-8 |
 | Full W7-X result | PROCESS built-in W7X-50 values | see docs/w7x_comparison.md |
 | Full HSX result | consistency with its equilibrium; plausibility | see docs/hsx_check.md |
 
-Tests that need the W7-X or HSX files are skipped when the files are absent. The
-SIMSOPT cross-check is skipped when SIMSOPT is not installed.
+Tests that need the W7-X or HSX files report that they were skipped when the
+files are absent.
+
+The Python version on `main` also has analytic tests for the mutual
+inductance, the hoop force, virtual work and the field inside a bar, and a
+cross-check against SIMSOPT. These have not been ported to Rust; they apply
+to the Rust version through its agreement with the Python results.
 
 ## Known issues
 
@@ -298,6 +374,25 @@ SIMSOPT cross-check is skipped when SIMSOPT is not installed.
   PROCESS 3.4.2 by the documents only, so a schema change upstream would not
   be caught automatically.
 
+### In the Rust version only
+
+- **NetCDF classic format only.** `wout` files in NetCDF-4 (HDF5) are
+  rejected; convert them with `nccopy -k classic`. VMEC2000 writes the
+  classic format by default.
+- **Fixed upper bounds.** For example 512 coils, 1024 samples per coil and 12
+  filaments across each side of the winding pack. Inputs beyond a bound are
+  rejected. See `src/limits.rs`.
+- **One processor core.** Threads request memory and are therefore not used.
+- **Empty output file after a failed run.** The output files are opened
+  before the calculation. After an error an existing file is unchanged; a new
+  file is left behind empty.
+- **Not all analytic tests have been ported**, see Verification.
+- **The daily static analysis does not run yet.** GitHub starts scheduled
+  runs only from the default branch; on this branch the analysis runs on
+  every push.
+- **The rules cover the program itself**, not the tests, the Python helper
+  scripts or Rust's standard library.
+
 ### By design
 
 - **Modular coils only.** Every coil must close poloidally around the plasma.
@@ -305,6 +400,8 @@ SIMSOPT cross-check is skipped when SIMSOPT is not installed.
   unequal currents are reduced to their mean absolute current, with a
   warning. Coils with zero current are ignored.
 - **Input formats.** VMEC `wout` and MAKEGRID only.
+- **No external libraries.** No existing Rust library is written to these
+  rules, so the readers and writers are own code.
 
 ### In PROCESS itself
 

@@ -50,6 +50,7 @@ pub fn failure_text<W: Write>(
     tolerances: &Tolerances,
     index: usize,
 ) -> Result<(), Error> {
+    ensure(check.nfp_equilibrium >= 1, BAD, "the consistency result is empty")?;
     ensure(index < N_TESTS, BAD, "unknown consistency test")?;
     if index == TEST_PERIODS {
         write!(
@@ -90,6 +91,9 @@ pub fn failure_text<W: Write>(
 
 /// Text of the warnings that come from the coil file.
 fn file_warning_text<W: Write>(out: &mut W, outcome: &Outcome, index: usize) -> Result<(), Error> {
+    let total = outcome.notes.zero_current + outcome.notes.closing_current;
+    let other = outcome.notes.varying_current + outcome.notes.not_closed;
+    ensure(total + other > 0, BAD, "the coil file gave no warning")?;
     let notes = outcome.notes;
     ensure(index <= WARN_NOT_CLOSED, BAD, "not a coil file warning")?;
     if index == WARN_ZERO_CURRENT {
@@ -126,6 +130,7 @@ pub fn warning_text<W: Write>(
     outcome: &Outcome,
     index: usize,
 ) -> Result<(), Error> {
+    ensure(settings.n_scan <= settings.scan_factors.len(), BAD, "too many scan factors")?;
     ensure(index < N_WARNINGS, BAD, "unknown warning")?;
     if index <= WARN_NOT_CLOSED {
         file_warning_text(out, outcome, index)?;
@@ -157,7 +162,7 @@ pub fn warning_text<W: Write>(
 }
 
 /// Largest field strength in the winding pack of the representative of
-/// class `class` [T].
+/// class `class` `[T]`.
 fn class_peak(work: &Workspace, class: usize) -> Result<f64, Error> {
     let n = work.coils.n_points;
     ensure(class < work.classes.n_classes, BAD, "a class index is out of range")?;
@@ -174,6 +179,7 @@ fn text_consistency<W: Write>(
     settings: &Settings,
     outcome: &Outcome,
 ) -> Result<(), Error> {
+    ensure(settings.tolerances.field > 0.0, BAD, "tolerances must be positive")?;
     let check = outcome.consistency;
     ensure(check.n_coils >= 1, BAD, "the consistency result is empty")?;
     writeln!(out, "\nConsistency of coils and equilibrium")?;
@@ -241,6 +247,7 @@ fn text_diagnostics<W: Write>(
     outcome: &Outcome,
     work: &Workspace,
 ) -> Result<(), Error> {
+    ensure(outcome.fit.count <= outcome.fit.widths.len(), BAD, "the peak-field fit is damaged")?;
     ensure(work.classes.n_classes >= 1, BAD, "no symmetry class was found")?;
     write!(out, "\nDiagnostics\n  magnetic energy: ")?;
     write_real(out, outcome.energy.energy * 1.0e-9)?;
@@ -288,6 +295,7 @@ pub fn write_text_report<W: Write>(
     work: &Workspace,
     runtime: f64,
 ) -> Result<(), Error> {
+    ensure(!inputs.0.is_empty() && !inputs.1.is_empty(), BAD, "the input file names are missing")?;
     ensure(runtime.is_finite() && runtime >= 0.0, BAD, "the run time is not valid")?;
     writeln!(out, "{GENERATOR}  (schema {SCHEMA_VERSION})")?;
     writeln!(out, "equilibrium: {}\ncoils:       {}", inputs.0, inputs.1)?;
@@ -312,6 +320,7 @@ pub fn write_text_report<W: Write>(
 
 /// Write `"name": value` with the given indentation and a trailing comma.
 fn json_real<W: Write>(out: &mut W, indent: &str, name: &str, value: f64) -> Result<(), Error> {
+    ensure(indent.len() <= 16, BAD, "a JSON entry is nested too deeply")?;
     ensure(!name.is_empty(), BAD, "a JSON entry needs a name")?;
     write!(out, "{indent}\"{name}\": ")?;
     write_json_real(out, value)?;
@@ -326,6 +335,7 @@ fn json_array<W: Write>(
     name: &str,
     values: &[f64],
 ) -> Result<(), Error> {
+    ensure(values.len() <= 64, BAD, "a JSON array is too long")?;
     ensure(!name.is_empty(), BAD, "a JSON entry needs a name")?;
     write!(out, "{indent}\"{name}\": [")?;
     for (index, value) in values.iter().enumerate() {
@@ -339,6 +349,7 @@ fn json_array<W: Write>(
 }
 
 fn json_settings<W: Write>(out: &mut W, name: &str, settings: &Settings) -> Result<(), Error> {
+    ensure(!name.is_empty(), BAD, "the configuration needs a name")?;
     ensure(settings.n_scan <= settings.scan_factors.len(), BAD, "too many scan factors")?;
     write!(out, "  \"settings\": {{\n    \"name\": ")?;
     write_json_text(out, name)?;
@@ -368,6 +379,7 @@ fn json_settings<W: Write>(out: &mut W, name: &str, settings: &Settings) -> Resu
 }
 
 fn json_values<W: Write>(out: &mut W, name: &str, outcome: &Outcome) -> Result<(), Error> {
+    ensure(outcome.config.assigned[1], BAD, "the configuration is incomplete")?;
     ensure(!name.is_empty(), BAD, "the configuration needs a name")?;
     writeln!(out, "  \"values\": [")?;
     for (index, entry) in KEYS.iter().enumerate() {
@@ -400,6 +412,7 @@ fn json_consistency<W: Write>(
     settings: &Settings,
     outcome: &Outcome,
 ) -> Result<(), Error> {
+    ensure(settings.tolerances.field > 0.0, BAD, "tolerances must be positive")?;
     let check = outcome.consistency;
     ensure(check.n_coils >= 1, BAD, "the consistency result is empty")?;
     writeln!(out, "  \"consistency\": {{")?;
@@ -432,6 +445,11 @@ fn json_consistency<W: Write>(
 }
 
 fn json_classes<W: Write>(out: &mut W, work: &Workspace) -> Result<(), Error> {
+    ensure(
+        work.class_self_inductance.len() >= work.classes.n_classes,
+        BAD,
+        "the class buffers are damaged",
+    )?;
     let count = work.classes.n_classes;
     ensure(
         count >= 1 && count <= work.class_centering.len(),
@@ -462,6 +480,7 @@ fn json_classes<W: Write>(out: &mut W, work: &Workspace) -> Result<(), Error> {
 }
 
 fn json_reported<W: Write>(out: &mut W, outcome: &Outcome) -> Result<(), Error> {
+    ensure(outcome.plasma.minor_radius > 0.0, BAD, "the plasma geometry is missing")?;
     let reported = outcome.reported;
     ensure(outcome.plasma.volume > 0.0, BAD, "the plasma geometry is missing")?;
     writeln!(out, "    \"plasma_as_reported_by_equilibrium\": {{")?;
@@ -509,6 +528,8 @@ fn json_diagnostics<W: Write>(
     writeln!(out, ",")?;
     json_array(out, "      ", "distance_m", &outcome.geometry.fit_distances)?;
     writeln!(out, "\n    }},")?;
+    let lofted = outcome.geometry.lofted_surface;
+    json_real(out, "    ", "coil_surface_lofted_between_filaments_m2", lofted)?;
     json_real(out, "    ", "winding_pack_clearance_m", outcome.clearance)?;
     write!(out, "    \"mean_coil_spacing_at_coil_rmajor_m\": ")?;
     let spacing = core::f64::consts::TAU * outcome.geometry.measures.r_major;
@@ -533,6 +554,7 @@ pub fn write_json_report<W: Write>(
     work: &Workspace,
     runtime: f64,
 ) -> Result<(), Error> {
+    ensure(!inputs.0.is_empty() && !inputs.1.is_empty(), BAD, "the input file names are missing")?;
     ensure(runtime.is_finite() && runtime >= 0.0, BAD, "the run time is not valid")?;
     writeln!(
         out,

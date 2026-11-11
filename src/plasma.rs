@@ -26,9 +26,9 @@ pub struct SurfaceGeometry {
     pub area: f64,
     /// Toroidally averaged poloidal cross-section [m^2].
     pub cross_section: f64,
-    /// Effective minor radius [m]: radius of a circle with the mean cross-section.
+    /// Effective minor radius `[m]`: radius of a circle with the mean cross-section.
     pub minor_radius: f64,
-    /// Effective major radius [m], defined so that `V = 2 pi^2 R a^2`.
+    /// Effective major radius `[m]`, defined so that `V = 2 pi^2 R a^2`.
     pub major_radius: f64,
     /// Major radius divided by minor radius.
     pub aspect_ratio: f64,
@@ -41,6 +41,7 @@ pub struct SurfaceGeometry {
 /// Returns an error if the mode numbers are not finite or too high for the
 /// largest supported grid.
 pub fn angle_counts(eq: &Equilibrium) -> Result<(usize, usize), Error> {
+    ensure(eq.xm.len() == eq.xn.len(), Code::Equilibrium, "the mode numbers are damaged")?;
     ensure(eq.nfp >= 1, Code::Equilibrium, "the equilibrium has no field periods")?;
     let (mut poloidal, mut toroidal) = (0.0_f64, 0.0_f64);
     for (m, n) in eq.xm.iter().zip(eq.xn.iter()) {
@@ -68,6 +69,7 @@ pub fn surface_geometry(
     s: f64,
     surface: &mut Coefficients,
 ) -> Result<SurfaceGeometry, Error> {
+    ensure(s > 0.0 && s <= 1.0, BAD, "s must lie in (0, 1]")?;
     let (n_theta, n_phi) = angle_counts(eq)?;
     interpolate(eq, s, surface)?;
     let d_theta = TAU / real(n_theta)?;

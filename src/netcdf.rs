@@ -91,6 +91,7 @@ fn skip_padded(cursor: &mut Cursor<'_>, length: usize) -> Result<(), Error> {
 }
 
 fn take_name<'a>(cursor: &mut Cursor<'a>) -> Result<&'a [u8], Error> {
+    ensure(cursor.position <= cursor.bytes.len(), BAD, "wout file header is damaged")?;
     let length = take_count(cursor, MAX_FILE_BYTES)?;
     let start = cursor.position;
     skip_padded(cursor, length)?;

@@ -22,7 +22,7 @@ use crate::limits::{
     CIRCLE_POINTS, MAX_COILS, MAX_FILE_BYTES, MAX_FILE_POINTS, MAX_GROUPS, MAX_LINES,
     MAX_NUMBER_CHARS, MAX_PERIODS, MAX_TOKENS,
 };
-use crate::num::{floor_count, is_finite, norm, real, sub, Vec3};
+use crate::num::{finite_vector, floor_count, norm, real, sub, Vec3};
 
 const BAD: Code = Code::CoilFile;
 
@@ -57,9 +57,9 @@ pub struct CoilSet {
     pub periods: usize,
     /// Index of the first point of each coil, plus one final entry.
     pub offsets: Vec<usize>,
-    /// Distinct points of all coils; each curve closes implicitly [m].
+    /// Distinct points of all coils; each curve closes implicitly `[m]`.
     pub points: Vec<Vec3>,
-    /// Current of each coil [A] (ampere-turns).
+    /// Current of each coil `[A]` (ampere-turns).
     pub currents: Vec<f64>,
     /// Irregularities met while reading.
     pub notes: FileNotes,
@@ -257,7 +257,7 @@ fn add_point(
     line: &Line,
     number: usize,
 ) -> Result<(), Error> {
-    ensure_at(is_finite(line.point), BAD, "non-finite number", number)?;
+    ensure_at(finite_vector(line.point), BAD, "non-finite number", number)?;
     let begin = set.points.len();
     let mut state = pending.unwrap_or(Pending {
         begin,

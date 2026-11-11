@@ -30,7 +30,6 @@ Usage::
 from __future__ import annotations
 
 import hashlib
-import sys
 import urllib.request
 from pathlib import Path
 
@@ -111,18 +110,34 @@ def fourier_curves(path: Path, n_points: int) -> list[np.ndarray]:
 
 
 def build_coils_file(name: str, n_points: int = 200) -> Path:
-    sys.path.insert(0, str(ROOT / "src"))
-    from stellarator_configprocessor.io.coils import (
-        Coil, CoilSet, expand_symmetry, write_makegrid)
+    """Write the full coil set in MAKEGRID format.
 
+    Each base coil is rotated into every field period. With stellarator
+    symmetry it is also mirrored, ``(x, y, z) -> (x, -y, -z)``, with the
+    current reversed, which keeps the field stellarator-symmetric.
+    """
     table, n_base, nfp, current, prefix = COIL_SETS[name]
     curves = fourier_curves(OUT / table, n_points)[:n_base]
-    base = CoilSet(coils=tuple(
-        Coil(points=pts, current=current, group=1, name=f"{prefix}{i + 1}")
-        for i, pts in enumerate(curves)))
-    full = expand_symmetry(base, nfp, stellsym=True)
-    write_makegrid(OUT / name, full, nfp)
-    print(f"  {name}: {len(full)} coils, {n_points} points each")
+    lines = [f"periods {nfp}", "begin filament", "mirror NIL"]
+    count = 0
+    for k in range(nfp):
+        ang = 2.0 * np.pi * k / nfp
+        rot = np.array([[np.cos(ang), -np.sin(ang), 0.0],
+                        [np.sin(ang), np.cos(ang), 0.0],
+                        [0.0, 0.0, 1.0]])
+        for flip in (False, True):
+            for i, base in enumerate(curves):
+                pts = base * np.array([1.0, -1.0, -1.0]) if flip else base
+                cur = -current if flip else current
+                pts = pts @ rot.T
+                for p in pts:
+                    lines.append(f"{p[0]: .15E} {p[1]: .15E} {p[2]: .15E} {cur: .15E}")
+                p = pts[0]
+                lines.append(f"{p[0]: .15E} {p[1]: .15E} {p[2]: .15E} {0.0: .15E} 1 {prefix}{i + 1}")
+                count += 1
+    lines.append("end")
+    (OUT / name).write_text("\n".join(lines) + "\n")
+    print(f"  {name}: {count} coils, {n_points} points each")
     return OUT / name
 
 

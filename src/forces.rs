@@ -33,11 +33,11 @@ pub struct ForceResult {
     pub max_radial_force_density: f64,
     /// Largest component along the toroidal normal, per area [N/m^3].
     pub max_lateral_force_density: f64,
-    /// Largest net force towards the torus axis on one coil [N].
+    /// Largest net force towards the torus axis on one coil `[N]`.
     pub centering_max: f64,
-    /// Smallest net force towards the torus axis on one coil [N].
+    /// Smallest net force towards the torus axis on one coil `[N]`.
     pub centering_min: f64,
-    /// Mean net force towards the torus axis per coil [N].
+    /// Mean net force towards the torus axis per coil `[N]`.
     pub centering_avg: f64,
 }
 
@@ -84,6 +84,12 @@ pub fn coil_forces(
     work: &PackWork,
     centering: &mut [f64],
 ) -> Result<ForceResult, Error> {
+    ensure(
+        frames.radial.len() == coils.points.len(),
+        BAD,
+        "the frame buffer does not match the coils",
+    )?;
+    ensure(layout.wp.area > 0.0, BAD, "the winding pack has no area")?;
     let n = coils.n_points;
     let corners = (layout.n_radial + 1) * (layout.n_toroidal + 1);
     ensure(

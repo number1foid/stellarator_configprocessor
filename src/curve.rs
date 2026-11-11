@@ -5,7 +5,7 @@
 
 use crate::error::{ensure, Code, Error};
 use crate::limits::{BISECTION_STEPS, MAX_FILE_POINTS, MAX_INDUCTANCE_SAMPLES};
-use crate::num::{add, cross, is_finite, norm, real, scale, sub, Vec3};
+use crate::num::{add, cross, finite_vector, norm, real, scale, sub, Vec3};
 
 const BAD: Code = Code::Numeric;
 
@@ -168,6 +168,7 @@ fn evaluate(points: &[Vec3], work: &SplineWork, t: f64) -> Sample {
 /// Cumulative arc length on a dense, uniform parameter grid. Returns the
 /// number of intervals.
 fn measure_arc(points: &[Vec3], work: &mut SplineWork, n_samples: usize) -> Result<usize, Error> {
+    ensure(n_samples >= 8, BAD, "need at least 8 samples per curve")?;
     let n = points.len();
     let dense = dense_count(n, n_samples);
     ensure(work.arc.len() > dense, Code::Limit, "the spline buffers are too small")?;
@@ -183,7 +184,7 @@ fn measure_arc(points: &[Vec3], work: &mut SplineWork, n_samples: usize) -> Resu
 }
 
 /// Fit a periodic spline through `points` and sample it at points uniformly
-/// spaced in arc length. Returns the length of the curve [m].
+/// spaced in arc length. Returns the length of the curve `[m]`.
 ///
 /// The three output slices must have the same length, which is the number of
 /// samples: positions, unit tangents and curvature [1/m].
@@ -199,6 +200,8 @@ pub fn resample(
     tangents: &mut [Vec3],
     curvature: &mut [f64],
 ) -> Result<f64, Error> {
+    let limit = MAX_FILE_POINTS.max(MAX_INDUCTANCE_SAMPLES);
+    ensure(points.len() <= limit, Code::Limit, "a curve has too many points")?;
     let count = positions.len();
     ensure(count >= 8, BAD, "need at least 8 samples per curve")?;
     ensure(
@@ -219,7 +222,7 @@ pub fn resample(
         let sample = evaluate(points, work, t);
         let speed = norm(sample.first);
         ensure(
-            speed > 0.0 && is_finite(sample.position),
+            speed > 0.0 && finite_vector(sample.position),
             BAD,
             "a sampled curve point is not finite",
         )?;

@@ -4,8 +4,9 @@
 //! buffers and allocates nothing.
 
 use crate::coilgeom::{
-    coil_distances, coil_measures, fitted_slope, new_symmetry_classes, plasma_coil_distance,
-    port_width, select_near_period, symmetry_classes, CoilMeasures, SymmetryClasses,
+    coil_distances, coil_measures, fitted_slope, lofted_surface_area, new_loft_work,
+    new_symmetry_classes, plasma_coil_distance, port_width, select_near_period, symmetry_classes,
+    CoilMeasures, LoftWork, SymmetryClasses,
 };
 use crate::coils::{new_sampled_coils, sample_coils, SampledCoils};
 use crate::consistency::{
@@ -25,7 +26,7 @@ use crate::limits::{
 use crate::makegrid::{scale_coils, CoilSet, FileNotes};
 use crate::num::real;
 use crate::plasma::{surface_geometry, SurfaceGeometry};
-use crate::schema::{empty_config, set_value, validate, Config};
+use crate::schema::{set_value, validate, Config, EMPTY_CONFIG};
 use crate::winding_pack::{
     coil_frames, fit_peak_field, new_frames, new_pack_work, pack_clearance, pack_layout,
     reference_pack_field, scan_pack_peak, winding_pack, Frames, PackLayout, PackWork, PeakFieldFit,
@@ -56,23 +57,25 @@ pub const WARN_OVERLAP: usize = 8;
 /// Warning: winding pack sizes were left out of the peak-field fit.
 pub const WARN_SIZES_SKIPPED: usize = 9;
 
+/// Factor from SI units to mega-units (MA, MN).
+const MEGA: f64 = 1.0e-6;
 /// Flux surfaces used for the derivative of the plasma-coil distance.
 const FIT_FLUX: [f64; FIT_SURFACES] = [1.0, 0.95, 0.9, 0.85];
 
 /// Run settings. The first four have no default on purpose.
 #[derive(Debug, Clone, Copy)]
 pub struct Settings {
-    /// Winding pack width in the coil's in-plane normal direction [m].
+    /// Winding pack width in the coil's in-plane normal direction `[m]`.
     pub wp_radial: f64,
-    /// Winding pack width in the toroidal direction [m].
+    /// Winding pack width in the toroidal direction `[m]`.
     pub wp_toroidal: f64,
     /// Effective helical ripple, passed through to PROCESS (not computed).
     pub epseff: f64,
     /// Neutron wall load peaking factor, passed through (not computed).
     pub neutron_peakfactor: f64,
-    /// Rescale the machine to this plasma major radius [m].
+    /// Rescale the machine to this plasma major radius `[m]`.
     pub rmajor_ref: Option<f64>,
-    /// Rescale the coil currents to give this mean field on axis [T].
+    /// Rescale the coil currents to give this mean field on axis `[T]`.
     pub bt_ref: Option<f64>,
     /// Scale the coil currents to the equilibrium's field before checking.
     pub match_field: bool,
@@ -118,9 +121,11 @@ pub struct Workspace {
     pub near: Vec<bool>,
     /// Coil indices in toroidal order.
     pub order: Vec<usize>,
-    /// Self-inductance of each class representative [H].
+    /// Surface lofted between neighbouring coils.
+    pub loft: LoftWork,
+    /// Self-inductance of each class representative `[H]`.
     pub class_self_inductance: Vec<f64>,
-    /// Net force towards the torus axis on each class representative [N].
+    /// Net force towards the torus axis on each class representative `[N]`.
     pub class_centering: Vec<f64>,
     /// The latest consistency check, kept for the error report.
     pub last_check: Option<Consistency>,
@@ -145,13 +150,16 @@ pub struct Scaling {
 pub struct CoilGeometry {
     /// Overall dimensions of the coil set.
     pub measures: CoilMeasures,
-    /// Minimum distance between the centre filaments of two coils [m].
+    /// Minimum distance between the centre filaments of two coils `[m]`.
     pub d_min: f64,
-    /// Largest distance between the centroids of neighbouring coils [m].
+    /// Largest distance between the centroids of neighbouring coils `[m]`.
     pub port_width: f64,
-    /// Effective minor radius of the flux surfaces used for the fit [m].
+    /// Area of the surface spanned by straight lines between neighbouring
+    /// coils [m^2].
+    pub lofted_surface: f64,
+    /// Effective minor radius of the flux surfaces used for the fit `[m]`.
     pub fit_radii: [f64; FIT_SURFACES],
-    /// Minimum plasma-coil distance for those surfaces [m].
+    /// Minimum plasma-coil distance for those surfaces `[m]`.
     pub fit_distances: [f64; FIT_SURFACES],
     /// Derivative of the distance with respect to the minor radius.
     pub slope: f64,
@@ -173,11 +181,11 @@ pub struct Outcome {
     pub reported: Reported,
     /// Coil geometry.
     pub geometry: CoilGeometry,
-    /// Mean toroidal component of the coil field on the axis [T].
+    /// Mean toroidal component of the coil field on the axis `[T]`.
     pub b_axis_toroidal: f64,
-    /// Smallest gap between the winding packs of different coils [m].
+    /// Smallest gap between the winding packs of different coils `[m]`.
     pub clearance: f64,
-    /// Peak field in the reference winding pack [T].
+    /// Peak field in the reference winding pack `[T]`.
     pub peak_field: f64,
     /// Fit of the peak field against winding pack size.
     pub fit: PeakFieldFit,
@@ -277,6 +285,7 @@ pub fn new_workspace(
     set: &CoilSet,
     settings: &Settings,
 ) -> Result<Workspace, Error> {
+    ensure(eq.n_modes >= 1 && !set.currents.is_empty(), Code::Numeric, "the inputs are empty")?;
     validate_settings(settings)?;
     let n_coils = set.currents.len();
     ensure(set.offsets.len() == n_coils + 1, Code::CoilFile, "the coil set is damaged")?;
@@ -295,6 +304,7 @@ pub fn new_workspace(
         inductance: new_inductance_work()?,
         near: vec![false; n_coils],
         order: vec![0; n_coils],
+        loft: new_loft_work(n_coils, settings.n_points)?,
         class_self_inductance: vec![0.0; n_coils],
         class_centering: vec![0.0; n_coils],
         last_check: None,
@@ -343,6 +353,7 @@ fn check_inputs<W: Write>(
     work: &mut Workspace,
     log: &mut W,
 ) -> Result<(Consistency, Consistency, Scaling), Error> {
+    ensure(set.periods >= 1, Code::CoilFile, "the coil file declares no field periods")?;
     writeln!(log, "... sampling coils")?;
     sample_coils(set, &mut work.spline, &mut work.coils)?;
     writeln!(log, "... checking that coils and equilibrium match")?;
@@ -413,10 +424,12 @@ fn coil_geometry(
         )?;
     }
     ensure(d_min > 0.0, Code::CoilFile, "two coils touch or cross")?;
+    let port = port_width(&work.coils, &mut work.order)?;
     Ok(CoilGeometry {
         measures: coil_measures(&work.coils)?,
         d_min,
-        port_width: port_width(&work.coils, &mut work.order)?,
+        port_width: port,
+        lofted_surface: lofted_surface_area(&work.coils, &work.order, &mut work.loft)?,
         fit_radii,
         fit_distances,
         slope: fitted_slope(&fit_radii, &fit_distances)?,
@@ -523,7 +536,8 @@ fn fill_config(
     checked: &Consistency,
     outcome: &mut Outcome,
 ) -> Result<(), Error> {
-    const MEGA: f64 = 1.0e-6;
+    ensure(eq.nfp >= 1, Code::Equilibrium, "the equilibrium has no field periods")?;
+    ensure(wp.toroidal > 0.0, Code::Settings, "wp_toroidal must be a positive number")?;
     let (plasma, coil, forces) = (outcome.plasma, outcome.geometry, outcome.forces);
     let config = &mut outcome.config;
     set_value(config, "symmetry", real(eq.nfp)?)?;
@@ -563,6 +577,53 @@ fn fill_config(
     validate(config)
 }
 
+/// Results of the electromagnetic stages.
+#[derive(Debug, Clone, Copy)]
+struct Electromagnetics {
+    clearance: f64,
+    peak_field: f64,
+    forces: ForceResult,
+    fit: PeakFieldFit,
+    energy: EnergyResult,
+    skipped: [bool; MAX_SCAN],
+}
+
+/// Field in the winding pack, forces, peak-field fit and magnetic energy.
+fn electromagnetics<W: Write>(
+    settings: &Settings,
+    wp: &WindingPack,
+    measures: &CoilMeasures,
+    work: &mut Workspace,
+    log: &mut W,
+) -> Result<Electromagnetics, Error> {
+    ensure(wp.area > 0.0, Code::Settings, "the winding pack has no area")?;
+    ensure(work.classes.n_classes >= 1, Code::Numeric, "no symmetry class was found")?;
+    writeln!(log, "... field in the winding pack")?;
+    coil_frames(&work.coils, &mut work.frames)?;
+    let layout = pack_layout(wp, settings.wp_filaments.0, settings.wp_filaments.1)?;
+    let distances = &work.pack.distances;
+    let clearance = pack_clearance(&work.coils, &work.frames, wp, &work.classes, distances)?;
+    let peak_field =
+        reference_pack_field(&work.coils, &work.frames, &layout, &work.classes, &mut work.pack)?;
+    writeln!(log, "... forces")?;
+    let centering = &mut work.class_centering;
+    let forces =
+        coil_forces(&work.coils, &work.frames, &work.classes, &layout, &work.pack, centering)?;
+    writeln!(log, "... peak field for several winding pack sizes")?;
+    let mut skipped = [false; MAX_SCAN];
+    let fit = peak_field_fit(settings, &layout, peak_field, measures, work, &mut skipped)?;
+    writeln!(log, "... magnetic energy")?;
+    let energy = magnetic_energy(
+        &work.coils,
+        wp,
+        &work.classes,
+        &mut work.spline,
+        &mut work.inductance,
+        &mut work.class_self_inductance,
+    )?;
+    Ok(Electromagnetics { clearance, peak_field, forces, fit, energy, skipped })
+}
+
 /// Compute the configuration for one equilibrium and coil set.
 ///
 /// The equilibrium and the coil set are rescaled in place to the reference
@@ -580,61 +641,33 @@ pub fn run<W: Write>(
     log: &mut W,
 ) -> Result<Outcome, Error> {
     validate_settings(settings)?;
-    ensure(
-        work.coils.n_coils == set.currents.len(),
-        Code::Numeric,
-        "the workspace does not match the coil set",
-    )?;
+    let matching = work.coils.n_coils == set.currents.len();
+    ensure(matching, Code::Numeric, "the workspace does not match the coil set")?;
+    let modes = eq.n_modes == work.surface.rc.len();
+    ensure(modes, Code::Numeric, "the workspace does not match the equilibrium")?;
     let (consistency, checked, scaling) = check_inputs(eq, set, settings, work, log)?;
     let wp = winding_pack(settings.wp_radial, settings.wp_toroidal)?;
     writeln!(log, "... plasma geometry")?;
     let plasma = surface_geometry(eq, 1.0, &mut work.surface)?;
     writeln!(log, "... coil geometry")?;
     let geometry = coil_geometry(eq, settings, work)?;
-    writeln!(log, "... field in the winding pack")?;
-    coil_frames(&work.coils, &mut work.frames)?;
-    let layout = pack_layout(&wp, settings.wp_filaments.0, settings.wp_filaments.1)?;
-    let clearance =
-        pack_clearance(&work.coils, &work.frames, &wp, &work.classes, &work.pack.distances)?;
-    let peak =
-        reference_pack_field(&work.coils, &work.frames, &layout, &work.classes, &mut work.pack)?;
-    writeln!(log, "... forces")?;
-    let forces = coil_forces(
-        &work.coils,
-        &work.frames,
-        &work.classes,
-        &layout,
-        &work.pack,
-        &mut work.class_centering,
-    )?;
-    writeln!(log, "... peak field for several winding pack sizes")?;
-    let mut skipped = [false; MAX_SCAN];
-    let fit = peak_field_fit(settings, &layout, peak, &geometry.measures, work, &mut skipped)?;
-    writeln!(log, "... magnetic energy")?;
-    let energy = magnetic_energy(
-        &work.coils,
-        &wp,
-        &work.classes,
-        &mut work.spline,
-        &mut work.inductance,
-        &mut work.class_self_inductance,
-    )?;
+    let results = electromagnetics(settings, &wp, &geometry.measures, work, log)?;
     let mut outcome = Outcome {
-        config: empty_config(),
+        config: EMPTY_CONFIG,
         consistency,
         scaling,
         plasma,
         reported: eq.reported,
         geometry,
         b_axis_toroidal: checked.b_axis_toroidal,
-        clearance,
-        peak_field: peak,
-        fit,
-        energy,
-        forces,
+        clearance: results.clearance,
+        peak_field: results.peak_field,
+        fit: results.fit,
+        energy: results.energy,
+        forces: results.forces,
         notes: set.notes,
         warnings: [false; N_WARNINGS],
-        skipped,
+        skipped: results.skipped,
     };
     collect_warnings(eq, &wp, &work.coils, &mut outcome)?;
     fill_config(eq, settings, &wp, work, &checked, &mut outcome)?;
