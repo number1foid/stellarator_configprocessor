@@ -8,3 +8,5 @@ dist/
 # local data downloaded for checks
 /data/local/
 scripts/dev_*.py
+*.log
+runs/
