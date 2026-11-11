@@ -40,19 +40,19 @@ end state of a failed optimisation is not a meaningful comparison.
 | Minimum coil distance (m) | 1.018 | 1.013 | -0.5% | |
 | Minimum bending radius (m) | 1.510 | 1.542 | +2.1% | |
 | Available radial space (m) | 1.410 | 1.429 | +1.3% | |
-| Centering force, max (MN) | 10.26 | 10.60 | +3.3% | |
-| Centering force, min (MN) | -4.43 | -4.69 | +5.9% | |
+| Centering force, max (MN) | 10.26 | 10.59 | +3.3% | |
+| Centering force, min (MN) | -4.43 | -4.68 | +5.8% | |
 | Centering force, mean (MN) | 5.52 | 5.65 | +2.3% | |
-| Lateral force density (MN/m^3) | 171.9 | 166.6 | -3.1% | |
+| Lateral force density (MN/m^3) | 171.9 | 166.9 | -2.9% | |
 | Intercoil structure mass (kg) | 4.18e6 | 4.07e6 | -2.6% | |
-| Peak field on conductor (T) | 11.79 | 12.50 | +6.0% | 1 |
-| Winding pack area (m^2) | 0.228 | 0.275 | +20% | 1 |
-| Winding pack current density (A/m^2) | 5.10e7 | 4.23e7 | -17% | 1 |
+| Peak field on conductor (T) | 11.79 | 12.49 | +6.0% | 1 |
+| Winding pack area (m^2) | 0.228 | 0.274 | +20% | 1 |
+| Winding pack current density (A/m^2) | 5.10e7 | 4.24e7 | -17% | 1 |
 | Coil-coil gap left (m) | 0.442 | 0.395 | -11% | 1 |
-| Quench voltage (kV) | 0.725 | 0.882 | +22% | 1 |
-| Total coil mass (kg) | 3.60e6 | 4.17e6 | +16% | 1 |
-| Radial force density (MN/m^3) | 218.5 | 191.0 | -13% | 1 |
-| Mean force density (MN/m^3) | 369.1 | 199.5 | -46% | 2 |
+| Quench voltage (kV) | 0.725 | 0.880 | +21% | 1 |
+| Total coil mass (kg) | 3.60e6 | 4.16e6 | +16% | 1 |
+| Radial force density (MN/m^3) | 218.5 | 191.3 | -12% | 1 |
+| Mean force density (MN/m^3) | 369.1 | 199.9 | -46% | 2 |
 | Force per unit length (MN/m) | 1223 | 54.8 | -96% | 2 |
 | Vertical port width (m) | 0.436 | 1.115 | +155% | 3 |
 | Horizontal port width (m) | 0.873 | 2.230 | +155% | 3 |
@@ -67,13 +67,13 @@ end state of a failed optimisation is not a meaningful comparison.
 1. **Size dependence of the peak field (`a2`).** Both configurations give the
    same peak field at the reference winding pack (6.29 T against 6.3 T). They
    differ in how the peak field grows as the winding pack shrinks relative to
-   the coil: `a2` is 0.0308 here and 0.025 built in. At reactor scale PROCESS
+   the coil: `a2` is 0.0311 here and 0.025 built in. At reactor scale PROCESS
    works at a smaller relative winding pack than the reference, so it finds a
    6% higher peak field and compensates with a 20% larger winding pack. Coil
    mass, current density, quench voltage, the remaining coil gap and the
    radial force density follow from that. The fit used here reproduces the
-   peak fields computed for five winding pack sizes to 0.35%. The built-in
-   pair, applied to the smallest of those sizes, gives a field 12% below the
+   peak fields computed for five winding pack sizes to 0.06%. The built-in
+   pair, applied to the smallest of those sizes, gives a field 13% below the
    computed one.
 2. **Built-in force values are not from one calculation.** The built-in
    `max_force_density_MNm` is 98.0 for all five configurations, including the
@@ -95,7 +95,7 @@ end state of a failed optimisation is not a meaningful comparison.
 ## Reproducing
 
 ```
-python scripts/fetch_w7x_data.py
+python scripts/fetch_reference_data.py
 
 stellarator-configprocessor data/local/wout_w7x_standard.nc data/local/coils.w7x_standard \
     --wp-radial 0.18 --wp-toroidal 0.15 --epseff 0.0095 --neutron-peakfactor 1.6 \
@@ -118,8 +118,10 @@ On native Windows replace `process` with
 - The built-in values are the only reference, and several of them are rounded
   or placeholders. Agreement shows that the definitions match; it does not
   measure accuracy. Accuracy rests on the analytic tests in `tests/`.
-- The peak field, energy and forces were not cross-checked against SIMSOPT
-  here, because SIMSOPT has no Windows build for the Python version in use.
+- SIMSOPT cross-checks the field on axis and the coil lengths in CI. The
+  peak field in the conductor, the energy and the forces have no cross-check
+  against a second code.
+- A second machine, HSX, is covered in [hsx_check.md](hsx_check.md).
 - `epseff = 0.0095` is the largest core value of the effective-ripple profile
   published with the equilibrium; `neutron_peakfactor = 1.6` is the built-in
   value. Neither is computed by this tool.

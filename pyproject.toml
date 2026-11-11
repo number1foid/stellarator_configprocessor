@@ -24,6 +24,7 @@ where = ["src"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 markers = [
-    "w7x: needs the W7-X files fetched by scripts/fetch_w7x_data.py",
+    "w7x: needs the W7-X files fetched by scripts/fetch_reference_data.py",
+    "hsx: needs the HSX files fetched by scripts/fetch_reference_data.py",
     "slow: takes more than a few seconds",
 ]

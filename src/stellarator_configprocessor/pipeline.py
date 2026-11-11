@@ -16,7 +16,8 @@ from .geometry.plasma import surface_geometry
 from .io.coils import CoilSet
 from .io.equilibrium import Equilibrium
 from .schema import KEYS, validate
-from .winding_pack import WindingPack, coil_frames, fit_peak_field, winding_pack_field
+from .winding_pack import (
+    WindingPack, coil_frames, fit_peak_field, pack_clearance, winding_pack_field)
 
 
 class SettingsError(ValueError):
@@ -50,7 +51,10 @@ class Settings:
     #: Filaments across the winding pack (radial, toroidal).
     wp_filaments: tuple[int, int] = (4, 4)
     #: Winding pack sizes, relative to the reference, used for the a1, a2 fit.
-    wp_scan_factors: tuple[float, ...] = (0.6, 0.8, 1.0, 1.25, 1.5)
+    #: The default only shrinks the pack: larger packs often touch the
+    #: neighbouring coils, and PROCESS at reactor scale works with a pack that
+    #: is smaller relative to the coil than the reference.
+    wp_scan_factors: tuple[float, ...] = (0.5, 0.6, 0.7, 0.85, 1.0)
     #: Angle resolution of the plasma surface for distance calculations.
     surface_resolution: int = 96
 
@@ -146,10 +150,6 @@ def run(eq: Equilibrium, coilset: CoilSet, settings: Settings, log=None) -> Resu
     d_pc = cg.plasma_coil_distance(eq, coils, 1.0, res, res)
     slope, fit_radii, fit_dists = cg.plasma_coil_distance_derivative(
         eq, coils, n_theta=res, n_phi=res)
-    if wp.toroidal >= d_min:
-        warnings.append(
-            f"the winding pack toroidal width ({wp.toroidal:.4g} m) is not smaller than the "
-            f"minimum coil-coil distance ({d_min:.4g} m): neighbouring winding packs overlap")
     if 0.5 * wp.radial >= d_pc:
         warnings.append("half the winding pack radial width exceeds the plasma-coil distance")
     if len(coils.currents) and np.ptp(np.abs(coils.currents)) > 1e-6 * np.abs(coils.currents).max():
@@ -159,6 +159,12 @@ def run(eq: Equilibrium, coilset: CoilSet, settings: Settings, log=None) -> Resu
     # ------------------------------------------------- field in winding pack
     log("field in the winding pack")
     frames = coil_frames(coils)
+    clearance = pack_clearance(coils, wp, reps, frames)
+    if clearance <= 0.0:
+        warnings.append(
+            f"winding packs of neighbouring coils overlap by {-clearance:.4g} m "
+            f"(minimum distance between filaments: {d_min:.4g} m); the peak field and "
+            "forces are not meaningful. Use smaller winding pack dimensions.")
     pack = winding_pack_field(coils, wp, reps, frames=frames, n_sub=settings.wp_filaments)
     b_max = pack.peak()
 
@@ -177,7 +183,11 @@ def run(eq: Equilibrium, coilset: CoilSet, settings: Settings, log=None) -> Resu
             peaks.append(b_max)
             continue
         scaled = wp.scaled(factor)
-        if scaled.toroidal >= 0.98 * d_min:
+        # A trial pack must stay clear of its neighbours by one filament cell,
+        # otherwise the neighbour's discrete filaments distort the field.
+        cell = max(scaled.radial / settings.wp_filaments[0],
+                   scaled.toroidal / settings.wp_filaments[1])
+        if pack_clearance(coils, scaled, reps, frames) < cell:
             skipped.append(factor)
             continue
         scan = winding_pack_field(coils, scaled, reps, frames=frames,
@@ -185,8 +195,8 @@ def run(eq: Equilibrium, coilset: CoilSet, settings: Settings, log=None) -> Resu
         widths.append(scaled.radial)
         peaks.append(scan.peak())
     if skipped:
-        warnings.append("winding pack sizes skipped in the a1, a2 fit because they would "
-                        f"overlap neighbouring coils: factors {skipped}")
+        warnings.append("winding pack sizes left out of the a1, a2 fit because they would "
+                        f"touch neighbouring coils: factors {skipped}")
     if len(widths) < 2:
         raise SettingsError("fewer than two usable winding pack sizes for the a1, a2 fit; "
                             "add smaller wp_scan_factors")
@@ -280,6 +290,7 @@ def run(eq: Equilibrium, coilset: CoilSet, settings: Settings, log=None) -> Resu
                 "distance_m": [float(x) for x in fit_dists],
             },
             "coil_surface_lofted_between_filaments_m2": cg.lofted_surface_area(coils),
+            "winding_pack_clearance_m": clearance,
             "mean_coil_spacing_at_coil_rmajor_m": 2.0 * np.pi * r_major / coils.n_coils,
         },
         "warnings": warnings,

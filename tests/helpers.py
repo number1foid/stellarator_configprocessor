@@ -12,6 +12,8 @@ from stellarator_configprocessor.io.coils import Coil, CoilSet
 DATA_LOCAL = Path(__file__).resolve().parents[1] / "data" / "local"
 W7X_WOUT = DATA_LOCAL / "wout_w7x_standard.nc"
 W7X_COILS = DATA_LOCAL / "coils.w7x_standard"
+HSX_WOUT = DATA_LOCAL / "wout_hsx_qhs.nc"
+HSX_COILS = DATA_LOCAL / "coils.hsx_qhs"
 
 
 def write_torus_wout(path, r0=10.0, a=2.0, nfp=5, b0=5.0, ns=11):

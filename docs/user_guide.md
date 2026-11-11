@@ -126,14 +126,15 @@ The files are public but not part of this repository. One script downloads
 them and builds the coil file:
 
 ```
-python scripts/fetch_w7x_data.py
+python scripts/fetch_reference_data.py
 ```
 
 This creates, in `data/local/`:
 
 - `wout_w7x_standard.nc`: vacuum equilibrium of the W7-X standard configuration;
 - `coils.w7x_standard`: the 50 as-built non-planar coils, 15 kA x 108 turns each;
-- `epseff_w7x_standard.txt`: effective ripple profile of that configuration.
+- `epseff_w7x_standard.txt`: effective ripple profile of that configuration;
+- `wout_hsx_qhs.nc` and `coils.hsx_qhs`: a second machine, see [hsx_check.md](hsx_check.md).
 
 Run the tool, stating the reference point at 3 T:
 
@@ -160,7 +161,7 @@ and the main results are:
 | `vol_plasma`, `plasma_surface` | 28.60 m^3, 136.7 m^2 |
 | `i0` | 1.745 MA |
 | `WP_bmax` | 6.29 T |
-| `a1`, `a2` | 0.655, 0.0308 |
+| `a1`, `a2` | 0.641, 0.0311 |
 | `inductance` | 4.18e-4 H |
 | `dmin`, `min_plasma_coil_distance` | 0.279 m, 0.394 m |
 | `centering_force_max_MN` | 2.91 MN |
@@ -231,6 +232,7 @@ If a coil file holds only the coils of one half period,
   by `(1 - derivative)` per unit of minor radius; see open point 4 in
   [schema.md](schema.md). This matters only if the aspect ratio is an
   iteration variable.
-- **Winding pack wider than the coil gap.** If `--wp-toroidal` is not smaller
-  than `dmin`, neighbouring winding packs overlap. The tool warns and the
-  peak field and forces are then not meaningful.
+- **Winding pack too large for the coil gap.** If the winding packs of
+  neighbouring coils overlap, the tool warns and states the overlap; the peak
+  field and forces are then not meaningful. The `a1`, `a2` fit uses packs from
+  half the reference size up to the reference size.

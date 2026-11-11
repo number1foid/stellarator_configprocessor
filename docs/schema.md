@@ -231,7 +231,7 @@ reference equilibrium.
 
 Inputs: as-built non-planar coils (SIMSOPT `W7-X.dat`, 15 kA x 108 turns) and
 the vacuum standard-configuration equilibrium, rescaled to `bt_ref = 3.0 T`,
-winding pack 0.18 m x 0.15 m. Produced by `scripts/fetch_w7x_data.py` and the
+winding pack 0.18 m x 0.15 m. Produced by `scripts/fetch_reference_data.py` and the
 command in `docs/w7x_comparison.md`, which also compares the resulting
 PROCESS runs.
 
@@ -239,8 +239,8 @@ PROCESS runs.
 |---|---|---|---|
 | `i0` | 1.7452 | 1.745 | 0.0% |
 | `WP_bmax` | 6.292 | 6.3 | -0.1% |
-| `a1` | 0.6546 | 0.66 | -0.8% |
-| `a2` | 0.0308 | 0.025 | +23% |
+| `a1` | 0.6406 | 0.66 | -2.9% |
+| `a2` | 0.0311 | 0.025 | +25% |
 | `inductance` | 418.2e-6 | 412.4e-6 | +1.4% |
 | `coil_rmajor` | 5.618 | 5.62 | 0.0% |
 | `coil_rminor` | 1.144 | 1.18 | -3.0% |
@@ -267,8 +267,8 @@ PROCESS runs.
 Notes on the differences:
 
 - `a2` sets how the peak field changes with winding pack size. The fit
-  reproduces the computed peak fields to 0.35% over radial widths from 0.108
-  to 0.27 m; the built-in pair gives the same peak field at the reference
+  reproduces the computed peak fields to 0.06% over radial widths from 0.09
+  to 0.18 m; the built-in pair gives the same peak field at the reference
   size but a weaker size dependence.
 - `max_lateral_force_density` is 10% above the built-in value. It depends on
   the winding pack orientation and on the local coil shape, and is the
@@ -306,3 +306,8 @@ Tolerances for tests against analytic and cross-code references.
    minor radius instead of `-deriv`. This only matters when the aspect ratio
    is an iteration variable. It is a property of PROCESS, noted here so that
    the value is not "corrected" in this tool.
+5. PROCESS scales the three centering forces with the coil length ratio
+   inverted (`reference length / actual length`), where eq. (43) of the paper
+   has `actual / reference`. Scaled up from W7-X to 20 m, PROCESS reports
+   10.6 MN where the paper's scaling gives about 139 MN. These are output-only
+   values in PROCESS. The reference values this tool writes are unaffected.

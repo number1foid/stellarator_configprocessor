@@ -1,24 +1,30 @@
-"""Download the public W7-X files used for the reference check.
+"""Download the public reference files used for the real-machine checks.
 
-Files are written to ``data/local/`` (not tracked by git):
+Files are written to ``data/local/`` (not tracked by git).
 
-* ``wout_w7x_standard.nc``: free-boundary vacuum VMEC equilibrium of the W7-X
-  standard configuration, from J. Geiger's database via the repository
-  ``landreman/vmec_equilibria`` (which states no licence, so the file is
-  downloaded and not redistributed here).
-* ``W7-X.dat``: Fourier coefficients of the W7-X coil filaments shipped with
-  SIMSOPT (MIT licence).
-* ``coils.w7x_standard``: MAKEGRID file built from ``W7-X.dat`` by this script:
-  the 50 non-planar coils with 15 kA x 108 turns each. The planar coils carry
-  no current in the standard configuration and are left out.
-* ``epseff_w7x_standard.txt``: effective ripple profile of the same
-  configuration, also from ``landreman/vmec_equilibria``.
+W7-X, standard configuration (5 field periods, 50 coils):
 
-Every download is pinned to a commit and verified against a SHA-256 checksum.
+* ``wout_w7x_standard.nc``: free-boundary vacuum VMEC equilibrium, from
+  J. Geiger's database via the repository ``landreman/vmec_equilibria``.
+* ``coils.w7x_standard``: MAKEGRID file built by this script from SIMSOPT's
+  ``W7-X.dat``: the 50 non-planar coils with 15 kA x 108 turns each. The planar
+  coils carry no current in the standard configuration and are left out.
+* ``epseff_w7x_standard.txt``: effective ripple profile of that configuration.
+
+HSX, quasi-helically symmetric configuration (4 field periods, 48 coils):
+
+* ``wout_hsx_qhs.nc``: free-boundary vacuum VMEC equilibrium, from
+  ``landreman/vmec_equilibria``.
+* ``coils.hsx_qhs``: MAKEGRID file built from SIMSOPT's ``HSX.dat``: the 48
+  main coils with 150.07 kA-turns each.
+
+``landreman/vmec_equilibria`` states no licence, so its files are downloaded
+and not redistributed here. SIMSOPT is MIT-licensed. Every download is pinned
+to a commit and verified against a SHA-256 checksum.
 
 Usage::
 
-    python scripts/fetch_w7x_data.py
+    python scripts/fetch_reference_data.py
 """
 
 from __future__ import annotations
@@ -49,14 +55,24 @@ FILES = {
         f"{VMEC_EQ}/W7-X/Standard/epseff_bc.txt",
         "d1084938fd48a5db689ce5f3ed25235cca3b1ffa2474fbd87622383736f8bc2b",
     ),
+    "HSX.dat": (
+        f"{SIMSOPT}/src/simsopt/configs/HSX.dat",
+        "d60968bec9138d1f7fd5bead349e6d58ee0aaa36dfc0a52b573c04021f48a477",
+    ),
+    "wout_hsx_qhs.nc": (
+        f"{VMEC_EQ}/HSX/free_boundary/wout_HSX.nc",
+        "f809f5f276f990bf900f4b78ecb887f2231521c62dea9513b88b653191e6c38d",
+    ),
 }
 
-#: W7-X standard configuration: current per non-planar coil [A] and turns.
-W7X_CURRENT_PER_TURN = 15000.0
-W7X_TURNS = 108
-W7X_NFP = 5
-#: The first five curves in W7-X.dat are the non-planar coils of one half period.
-W7X_N_NONPLANAR = 5
+#: Coil sets to build: output name -> (Fourier table, number of base coils used,
+#: field periods, current per coil in ampere-turns, coil name prefix).
+#: W7-X: the first five curves are the non-planar coils of one half period,
+#: 15 kA x 108 turns. HSX: six main coils per half period, current as in SIMSOPT.
+COIL_SETS = {
+    "coils.w7x_standard": ("W7-X.dat", 5, 5, 15000.0 * 108, "NPC"),
+    "coils.hsx_qhs": ("HSX.dat", 6, 4, -1.500725500000000e05, "MC"),
+}
 
 
 def download(name: str) -> Path:
@@ -94,21 +110,20 @@ def fourier_curves(path: Path, n_points: int) -> list[np.ndarray]:
     return curves
 
 
-def build_coils_file(dat: Path, n_points: int = 200) -> Path:
+def build_coils_file(name: str, n_points: int = 200) -> Path:
     sys.path.insert(0, str(ROOT / "src"))
     from stellarator_configprocessor.io.coils import (
         Coil, CoilSet, expand_symmetry, write_makegrid)
 
-    curves = fourier_curves(dat, n_points)[:W7X_N_NONPLANAR]
-    current = W7X_CURRENT_PER_TURN * W7X_TURNS
+    table, n_base, nfp, current, prefix = COIL_SETS[name]
+    curves = fourier_curves(OUT / table, n_points)[:n_base]
     base = CoilSet(coils=tuple(
-        Coil(points=pts, current=current, group=1, name=f"NPC{i + 1}")
+        Coil(points=pts, current=current, group=1, name=f"{prefix}{i + 1}")
         for i, pts in enumerate(curves)))
-    full = expand_symmetry(base, W7X_NFP, stellsym=True)
-    target = OUT / "coils.w7x_standard"
-    write_makegrid(target, full, W7X_NFP)
-    print(f"  coils.w7x_standard: {len(full)} coils, {n_points} points each")
-    return target
+    full = expand_symmetry(base, nfp, stellsym=True)
+    write_makegrid(OUT / name, full, nfp)
+    print(f"  {name}: {len(full)} coils, {n_points} points each")
+    return OUT / name
 
 
 def main() -> None:
@@ -116,7 +131,8 @@ def main() -> None:
     print(f"Writing to {OUT}")
     for name in FILES:
         download(name)
-    build_coils_file(OUT / "W7-X.dat")
+    for name in COIL_SETS:
+        build_coils_file(name)
     print("Done.")
 
 

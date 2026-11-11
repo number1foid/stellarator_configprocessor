@@ -26,7 +26,7 @@ jobs:
         run: pip install simsopt || echo "SIMSOPT not available; its tests will be skipped"
 
       - name: Fetch public W7-X reference files
-        run: python scripts/fetch_w7x_data.py
+        run: python scripts/fetch_reference_data.py
 
       - name: Test
         run: pytest -ra

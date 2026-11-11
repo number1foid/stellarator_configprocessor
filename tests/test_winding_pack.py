@@ -7,8 +7,8 @@ from stellarator_configprocessor.geometry import coils as cg
 from stellarator_configprocessor.io.coils import Coil, CoilSet, read_makegrid
 from stellarator_configprocessor.io.equilibrium import read_wout
 from stellarator_configprocessor.winding_pack import (
-    WindingPack, bar_kernel, coil_frames, filament_kernel, fit_peak_field, process_bmax,
-    winding_pack_field)
+    WindingPack, bar_kernel, coil_frames, filament_kernel, fit_peak_field, pack_clearance,
+    process_bmax, winding_pack_field)
 
 
 def test_winding_pack_properties():
@@ -139,6 +139,23 @@ def test_tf_coil_peak_field_is_on_the_inboard_side():
     # and self-field enhancement, but of the same order.
     ideal = ideal_toroid_field(n, cur, r0 - ac)
     assert 1.0 < pf.peak() / ideal < 1.6
+
+
+def test_pack_clearance_of_toroidal_coils():
+    n, r0, ac = 20, 10.0, 4.0
+    sc = circular_tf_coils(n_coils=n, r0=r0, a_coil=ac).sampled(240)
+    wp = WindingPack(0.6, 0.5)
+    # Closest approach is at the inboard midplane, between the inner corner of
+    # one pack and the side of the next, which is rotated by 2 pi / n.
+    delta = 2 * np.pi / n
+    r_in = r0 - ac - 0.5 * wp.radial
+    du = abs(r_in * np.cos(delta) + 0.5 * wp.toroidal * np.sin(delta) - (r0 - ac)) - 0.5 * wp.radial
+    dv = r_in * np.sin(delta) - 0.5 * wp.toroidal * (1 + np.cos(delta))
+    assert du > 0 and dv > 0
+    assert pack_clearance(sc, wp, [0]) == pytest.approx(np.hypot(du, dv), rel=0.02)
+    # Clearance shrinks as the pack grows and turns negative once packs overlap.
+    assert pack_clearance(sc, wp.scaled(2.0), [0]) < pack_clearance(sc, wp, [0])
+    assert pack_clearance(sc, WindingPack(2.4, 2.0), [0]) < 0
 
 
 def test_fit_recovers_process_parameters():

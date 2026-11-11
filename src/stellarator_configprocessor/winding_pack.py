@@ -257,6 +257,39 @@ def winding_pack_field(
                      b=tuple(fields), weights=weights, wp=wp)
 
 
+def pack_clearance(coils: SampledCoils, wp: WindingPack, targets,
+                   frames: tuple[np.ndarray, np.ndarray] | None = None) -> float:
+    """Smallest gap between the winding packs of different coils [m].
+
+    For every corner of the winding pack of each target coil, the nearest
+    cross-section of every other coil is located and the distance from the
+    corner to that rectangle is measured. A value of zero or less means two
+    winding packs touch or overlap. Because only corners are tested, the
+    result is slightly optimistic for packs that meet edge to edge.
+    """
+    n_r, n_t = frames if frames is not None else coil_frames(coils)
+    corners = np.array([[su * 0.5 * wp.radial, sv * 0.5 * wp.toroidal]
+                        for su in (-1.0, 1.0) for sv in (-1.0, 1.0)])
+    clearance = np.inf
+    for i in np.atleast_1d(np.asarray(targets, dtype=int)):
+        pts = (coils.points[i][:, None, :]
+               + corners[None, :, 0, None] * n_r[i][:, None, :]
+               + corners[None, :, 1, None] * n_t[i][:, None, :]).reshape(-1, 3)
+        dist = coil_distances(coils, int(i))
+        # Nearby coils, and always the nearest one.
+        for k in np.nonzero(dist <= max(2.0 * wp.diagonal, 1.01 * dist.min()))[0]:
+            rel = pts[:, None, :] - coils.points[k][None, :, :]
+            nearest = np.argmin(np.einsum("psk,psk->ps", rel, rel), axis=1)
+            d = pts - coils.points[k][nearest]
+            du = np.abs(np.einsum("pk,pk->p", d, n_r[k][nearest])) - 0.5 * wp.radial
+            dv = np.abs(np.einsum("pk,pk->p", d, n_t[k][nearest])) - 0.5 * wp.toroidal
+            # Signed distance to the rectangle: negative inside.
+            outside = np.hypot(np.maximum(du, 0.0), np.maximum(dv, 0.0))
+            inside = np.minimum(np.maximum(du, dv), 0.0)
+            clearance = min(clearance, float(np.min(outside + inside)))
+    return clearance
+
+
 # ------------------------------------------------------------- peak-field fit
 @dataclass(frozen=True)
 class PeakFieldFit:
