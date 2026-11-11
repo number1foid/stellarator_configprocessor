@@ -1,0 +1,16 @@
+[package]
+name = "alloc_guard"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+description = "Global allocator that counts heap requests and refuses them once locked"
+publish = false
+
+[lints.rust]
+warnings = { level = "deny", priority = -1 }
+missing_docs = "deny"
+unused_results = "deny"
+
+[lints.clippy]
+all = { level = "deny", priority = -1 }
+pedantic = { level = "deny", priority = -1 }

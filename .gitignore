@@ -12,3 +12,5 @@ scripts/dev_*.py
 runs/
 # kept locally, not part of the repository
 /IMPLEMENTATION_OUTLINE.md
+# Rust build output
+/target/

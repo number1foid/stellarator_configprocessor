@@ -1,0 +1,63 @@
+[workspace]
+members = ["alloc_guard"]
+
+[package]
+name = "stellarator_configprocessor"
+version = "0.2.0"
+edition = "2021"
+rust-version = "1.82"
+license = "MIT"
+description = "Open pre-processor that writes the stellarator configuration file (stella_conf.json) read by the PROCESS systems code"
+readme = "README.md"
+repository = "https://github.com/number1foid/stellarator_configprocessor"
+publish = false
+
+[[bin]]
+name = "stellarator-configprocessor"
+path = "src/main.rs"
+
+# The only dependency is the allocation guard in this repository. No
+# third-party crate is used: none is written to the coding rules this crate
+# follows (see docs/power_of_ten.md).
+[dependencies]
+alloc_guard = { path = "alloc_guard" }
+
+# Rule 1: a failed run-time check stops the program; it never unwinds.
+[profile.dev]
+panic = "abort"
+
+[profile.release]
+panic = "abort"
+opt-level = 3
+
+# Rule 10: every warning is an error, at the strictest lint level.
+[lints.rust]
+warnings = { level = "deny", priority = -1 }
+unsafe_code = "forbid"
+missing_docs = "deny"
+missing_debug_implementations = "deny"
+unused_results = "deny"
+unused_qualifications = "deny"
+unused_lifetimes = "deny"
+unused_import_braces = "deny"
+trivial_casts = "deny"
+trivial_numeric_casts = "deny"
+non_ascii_idents = "deny"
+unreachable_pub = "deny"
+
+[lints.clippy]
+all = { level = "deny", priority = -1 }
+pedantic = { level = "deny", priority = -1 }
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+todo = "deny"
+unimplemented = "deny"
+unreachable = "deny"
+print_stdout = "deny"
+print_stderr = "deny"
+dbg_macro = "deny"
+as_conversions = "deny"
+exit = "deny"
+mem_forget = "deny"
+let_underscore_must_use = "deny"
