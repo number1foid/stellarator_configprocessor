@@ -1,0 +1,28 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "stellarator-configprocessor"
+version = "0.1.0.dev0"
+description = "Open pre-processor that writes the stellarator configuration file (stella_conf.json) read by the PROCESS systems code"
+readme = "README.md"
+license = { text = "MIT" }
+requires-python = ">=3.10"
+dependencies = ["numpy>=1.23", "netCDF4>=1.6"]
+
+[project.optional-dependencies]
+test = ["pytest>=7"]
+
+[project.scripts]
+stellarator-configprocessor = "stellarator_configprocessor.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = [
+    "w7x: needs the W7-X files fetched by scripts/fetch_w7x_data.py",
+    "slow: takes more than a few seconds",
+]
