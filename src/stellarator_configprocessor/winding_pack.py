@@ -129,6 +129,7 @@ class PackField:
 
     targets: np.ndarray  # [T] coil index of each evaluated coil
     stations: tuple  # T arrays: sample indices evaluated along each coil
+    points: tuple  # T arrays [nstation, n_r + 1, n_t + 1, 3]: evaluation points [m]
     b: tuple  # T arrays [nstation, n_r + 1, n_t + 1, 3] in tesla
     weights: np.ndarray  # [n_r + 1, n_t + 1] quadrature weights, sum = 1
     wp: WindingPack
@@ -207,12 +208,13 @@ def winding_pack_field(
     wt[[0, -1]] = 0.5
     weights = np.outer(wr / nr, wt / nt)
 
-    fields, used_stations = [], []
+    fields, used_stations, used_points = [], [], []
     for pos, i in enumerate(targets):
         st = all_stations if stations is None else np.asarray(stations[pos], dtype=int)
         used_stations.append(st)
         if len(st) == 0:
             fields.append(np.zeros((0, nr + 1, nt + 1, 3)))
+            used_points.append(np.zeros((0, nr + 1, nt + 1, 3)))
             continue
         base = coils.points[i][st]
         points = (base[:, None, None, :]
@@ -249,9 +251,10 @@ def winding_pack_field(
                 t_x_nr[:, None, None, :] * delta_u[None, :, :, None]
                 + t_x_nt[:, None, None, :] * delta_v[None, :, :, None])
         fields.append(b)
+        used_points.append(points)
 
-    return PackField(targets=targets, stations=tuple(used_stations), b=tuple(fields),
-                     weights=weights, wp=wp)
+    return PackField(targets=targets, stations=tuple(used_stations), points=tuple(used_points),
+                     b=tuple(fields), weights=weights, wp=wp)
 
 
 # ------------------------------------------------------------- peak-field fit
