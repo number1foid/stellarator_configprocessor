@@ -46,17 +46,18 @@ def prepare(source: Path, target: Path, istell: int, rmajor: float | None,
             continue  # keep only the global power balance
         if key == "ixc" and not re.match(r"ixc\s*=\s*10\b", stripped):
             continue  # keep only the confinement factor
+        text = line
         if key == "n_equality_constraints":
-            line = "n_equality_constraints = 1"
+            text = "n_equality_constraints = 1"
         elif key == "i_process_run_mode":
-            line = "i_process_run_mode = -2"
+            text = "i_process_run_mode = -2"
         elif key == "istell":
-            line = f"istell = {istell}"
+            text = f"istell = {istell}"
         elif key == "rmajor" and rmajor is not None:
-            line = f"rmajor = {rmajor}"
+            text = f"rmajor = {rmajor}"
         elif key == "b_plasma_toroidal_on_axis" and bt is not None:
-            line = f"b_plasma_toroidal_on_axis = {bt}"
-        out.append(line)
+            text = f"b_plasma_toroidal_on_axis = {bt}"
+        out.append(text)
     target.write_text("\n".join(out) + "\n", encoding="utf-8")
 
 

@@ -59,7 +59,7 @@ def format_text(report: dict) -> str:
             f"{_fmt(k['peak_field_T'])} T, centering force {_fmt(k['centering_force_MN'])} MN")
     f = d["peak_field_fit"]
     lines.append("  peak-field fit (radial width m: computed T / fitted T):")
-    for w, b, fit in zip(f["radial_width_m"], f["peak_field_T"], f["fitted_T"]):
+    for w, b, fit in zip(f["radial_width_m"], f["peak_field_T"], f["fitted_T"], strict=True):
         lines.append(f"    {_fmt(w)}: {_fmt(b)} / {_fmt(fit)}")
     lines.append(f"    largest relative deviation of the fit: {_fmt(f['max_relative_error'])}")
 

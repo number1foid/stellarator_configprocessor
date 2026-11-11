@@ -15,6 +15,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 import numpy as np
 
+from ._checks import points_array, require
 from .constants import MU0
 
 #: Point-segment pairs evaluated per vectorised block. Small blocks keep the
@@ -41,11 +42,15 @@ def biot_savart(points: np.ndarray, start: np.ndarray, end: np.ndarray,
     A point lying exactly on a segment receives no contribution from that
     segment (the field of a line current is undefined there).
     """
-    points = np.ascontiguousarray(points, dtype=float).reshape(-1, 3)
-    start = np.ascontiguousarray(start, dtype=float).reshape(-1, 3)
-    end = np.ascontiguousarray(end, dtype=float).reshape(-1, 3)
-    current = np.ascontiguousarray(np.broadcast_to(np.asarray(current, dtype=float),
-                                                   (len(start),)))
+    points = np.ascontiguousarray(points_array(points, "points")).reshape(-1, 3)
+    start = np.ascontiguousarray(points_array(start, "start")).reshape(-1, 3)
+    end = np.ascontiguousarray(points_array(end, "end")).reshape(-1, 3)
+    require(len(start) == len(end), "start and end must hold the same number of segments")
+    current = np.asarray(current, dtype=float)
+    require(current.ndim == 0 or current.shape == (len(start),),
+            "current must be a scalar or one value per segment")
+    require(bool(np.all(np.isfinite(current))), "current contains non-finite values")
+    current = np.ascontiguousarray(np.broadcast_to(current, (len(start),)))
     out = np.zeros_like(points)
     if len(points) == 0 or len(start) == 0:
         return out

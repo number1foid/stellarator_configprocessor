@@ -19,6 +19,7 @@ from dataclasses import dataclass
 
 import numpy as np
 
+from ._checks import require
 from .geometry.coils import SymmetryClasses
 from .io.coils import SampledCoils
 from .winding_pack import PackField
@@ -76,6 +77,8 @@ def coil_forces(coils: SampledCoils, pack: PackField, frames, classes: SymmetryC
     if not np.array_equal(pack.targets, classes.representatives):
         raise ValueError("the winding pack field must cover the class representatives")
     n_r, n_t = frames
+    require(n_r.shape == coils.points.shape and n_t.shape == coils.points.shape,
+            "frames must have the shape of the coil points")
     line, radial, lateral, net, centering = [], [], [], [], []
     for c, i in enumerate(classes.representatives):
         if len(pack.stations[c]) != coils.n_points:

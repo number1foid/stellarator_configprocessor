@@ -11,6 +11,7 @@ from dataclasses import dataclass
 
 import numpy as np
 
+from .._checks import coil_index, points_array, require
 from ..io.coils import SampledCoils
 from ..io.equilibrium import Equilibrium
 from .plasma import angle_grid, surface_geometry
@@ -61,7 +62,11 @@ def point_segment_distance(points: np.ndarray, start: np.ndarray, end: np.ndarra
 
     Returns ``(distance [npts], segment index [npts])``.
     """
-    points = np.asarray(points, dtype=float).reshape(-1, 3)
+    points = points_array(points, "points").reshape(-1, 3)
+    start = points_array(start, "start").reshape(-1, 3)
+    end = points_array(end, "end").reshape(-1, 3)
+    require(len(start) == len(end) and len(start) > 0,
+            "start and end must hold the same, non-zero number of segments")
     seg = end - start
     seg_len2 = np.einsum("sk,sk->s", seg, seg)
     dist = np.empty(len(points))
@@ -82,6 +87,7 @@ def coil_distances(coils: SampledCoils, i: int) -> np.ndarray:
 
     The entry for coil ``i`` itself is infinite.
     """
+    i = coil_index(i, coils.n_coils)
     out = np.full(coils.n_coils, np.inf)
     others = np.array([j for j in range(coils.n_coils) if j != i])
     if len(others) == 0:
@@ -126,6 +132,8 @@ def symmetry_classes(coils: SampledCoils, nfp: int, stellsym: bool = True,
     the length and the absolute current. If the coil set does not have the
     symmetry, every coil forms its own class and results stay correct.
     """
+    require(int(nfp) >= 1, f"nfp must be at least 1, got {nfp!r}")
+    require(rtol > 0.0, "rtol must be positive")
     centroid = coils.points.mean(axis=1)
     r = np.hypot(centroid[:, 0], centroid[:, 1])
     phi = np.arctan2(centroid[:, 1], centroid[:, 0])
@@ -140,12 +148,12 @@ def symmetry_classes(coils: SampledCoils, nfp: int, stellsym: bool = True,
         return np.abs(d) < rtol
 
     class_of = np.full(coils.n_coils, -1)
-    reps = []
+    found: list[int] = []
     for i in range(coils.n_coils):
         if class_of[i] >= 0:
             continue
-        c = len(reps)
-        reps.append(i)
+        c = len(found)
+        found.append(i)
         same = (np.abs(r - r[i]) < rtol * scale) \
             & (np.abs(coils.lengths - coils.lengths[i]) < rtol * coils.lengths[i]) \
             & (np.abs(cur - cur[i]) < rtol * cur_scale)
@@ -154,7 +162,7 @@ def symmetry_classes(coils: SampledCoils, nfp: int, stellsym: bool = True,
         if stellsym:
             match = match | (same & same_angle(phi, -phi[i]) & (np.abs(z + z[i]) < rtol * scale))
         class_of[match & (class_of < 0)] = c
-    reps = np.array(reps)
+    reps = np.array(found)
     mult = np.bincount(class_of, minlength=len(reps))
     return SymmetryClasses(representatives=reps, multiplicity=mult, class_of=class_of)
 
@@ -267,6 +275,8 @@ def _coils_near_period(coils: SampledCoils, nfp: int) -> np.ndarray:
 def plasma_coil_distance(eq: Equilibrium, coils: SampledCoils, s: float = 1.0,
                          n_theta: int = 96, n_phi: int = 96) -> float:
     """Minimum distance between the flux surface at ``s`` and any coil filament [m]."""
+    require(0.0 < s <= 1.0, f"s must lie in (0, 1], got {s!r}")
+    require(n_theta >= 8 and n_phi >= 8, "the surface needs at least 8 points per angle")
     theta, phi = angle_grid(eq, n_theta, n_phi)
     surface = eq.surface_xyz(s, theta, phi).reshape(-1, 3)
     idx = _coils_near_period(coils, eq.nfp)
@@ -286,6 +296,7 @@ def plasma_coil_distance_derivative(eq: Equilibrium, coils: SampledCoils,
     Returns ``(slope, minor radii, distances)``. The slope is -1 when all
     surfaces are concentric circles.
     """
+    require(len(set(s_values)) >= 2, "the fit needs at least two distinct surfaces")
     radii = np.array([surface_geometry(eq, s).minor_radius for s in s_values])
     dists = np.array([plasma_coil_distance(eq, coils, s, n_theta, n_phi) for s in s_values])
     slope = float(np.polyfit(radii, dists, 1)[0])

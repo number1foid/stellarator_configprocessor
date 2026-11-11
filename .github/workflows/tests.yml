@@ -20,7 +20,16 @@ jobs:
           cache: pip
 
       - name: Install
-        run: pip install -e ".[test]"
+        run: pip install -e ".[test,lint]"
+
+      - name: Lint (ruff, zero findings allowed)
+        run: ruff check .
+
+      - name: Type check (mypy, zero findings allowed)
+        run: mypy
+
+      - name: Compile with warnings as errors
+        run: python -W error -m compileall -q -f src
 
       - name: Install SIMSOPT for the cross-check (optional)
         run: pip install simsopt || echo "SIMSOPT not available; its tests will be skipped"

@@ -14,6 +14,7 @@ dependencies = ["numpy>=1.23", "netCDF4>=1.6"]
 
 [project.optional-dependencies]
 test = ["pytest>=7"]
+lint = ["ruff>=0.6", "mypy>=1.10"]
 
 [project.scripts]
 stellarator-configprocessor = "stellarator_configprocessor.cli:main"
@@ -28,3 +29,26 @@ markers = [
     "hsx: needs the HSX files fetched by scripts/fetch_reference_data.py",
     "slow: takes more than a few seconds",
 ]
+
+[tool.ruff]
+line-length = 100
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+# Errors, pyflakes, warnings, bugbear, unused arguments, complexity, pylint.
+select = ["E", "F", "W", "B", "ARG", "C90", "PLE", "PLW", "RET", "SIM", "UP"]
+
+[tool.ruff.lint.mccabe]
+max-complexity = 15
+
+[tool.mypy]
+files = ["src"]
+python_version = "3.10"
+warn_unused_ignores = true
+warn_redundant_casts = true
+warn_unreachable = true
+check_untyped_defs = true
+
+[[tool.mypy.overrides]]
+module = ["netCDF4"]
+ignore_missing_imports = true

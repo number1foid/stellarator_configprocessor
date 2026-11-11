@@ -10,6 +10,7 @@ from dataclasses import dataclass
 
 import numpy as np
 
+from .._checks import require
 from ..io.equilibrium import Equilibrium
 
 
@@ -43,6 +44,7 @@ def angle_grid(eq: Equilibrium, n_theta: int | None = None, n_phi: int | None = 
     n_max = int(np.max(np.abs(eq.xn)) // eq.nfp)
     n_theta = n_theta or max(64, 6 * m_max + 2)
     n_phi = n_phi or max(64, 6 * n_max + 2)
+    require(n_theta >= 8 and n_phi >= 8, "the surface needs at least 8 points per angle")
     theta = np.linspace(0.0, 2.0 * np.pi, n_theta, endpoint=False)
     phi = np.linspace(0.0, 2.0 * np.pi / eq.nfp, n_phi, endpoint=False)
     return theta, phi

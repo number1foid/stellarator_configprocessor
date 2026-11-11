@@ -132,7 +132,7 @@ class Equilibrium:
         return self.b_axis_cos @ np.cos(angle) + self.b_axis_sin @ np.sin(angle)
 
     # --------------------------------------------------------------- scaling
-    def scaled(self, length_factor: float = 1.0, field_factor: float = 1.0) -> "Equilibrium":
+    def scaled(self, length_factor: float = 1.0, field_factor: float = 1.0) -> Equilibrium:
         """Return a copy with all lengths and fields multiplied by the factors."""
 
         def mul(arr, f):

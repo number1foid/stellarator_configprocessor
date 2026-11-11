@@ -39,7 +39,7 @@ class Coil:
     group: int = 0
     name: str = ""
 
-    def scaled(self, length_factor: float = 1.0, current_factor: float = 1.0) -> "Coil":
+    def scaled(self, length_factor: float = 1.0, current_factor: float = 1.0) -> Coil:
         return replace(self, points=self.points * length_factor,
                        current=self.current * current_factor)
 
@@ -60,14 +60,14 @@ class CoilSet:
     def currents(self) -> np.ndarray:
         return np.array([c.current for c in self.coils])
 
-    def scaled(self, length_factor: float = 1.0, current_factor: float = 1.0) -> "CoilSet":
+    def scaled(self, length_factor: float = 1.0, current_factor: float = 1.0) -> CoilSet:
         return replace(self, coils=tuple(c.scaled(length_factor, current_factor)
                                          for c in self.coils))
 
-    def without_zero_current(self) -> "CoilSet":
+    def without_zero_current(self) -> CoilSet:
         return replace(self, coils=tuple(c for c in self.coils if c.current != 0.0))
 
-    def sampled(self, n: int) -> "SampledCoils":
+    def sampled(self, n: int) -> SampledCoils:
         """Sample every coil at ``n`` points uniform in arc length."""
         curves = [sample_closed_curve(c.points, n) for c in self.coils]
         return SampledCoils(
@@ -88,6 +88,19 @@ class SampledCoils:
     curvature: np.ndarray  # [ncoil, n]
     lengths: np.ndarray  # [ncoil]
     currents: np.ndarray  # [ncoil]
+
+    def __post_init__(self):
+        shape = np.shape(self.points)
+        if len(shape) != 3 or shape[2] != 3 or shape[0] < 1 or shape[1] < 3:
+            raise ValueError(f"points must have shape [ncoil, n >= 3, 3], got {shape}")
+        if np.shape(self.tangents) != shape or np.shape(self.curvature) != shape[:2]:
+            raise ValueError("tangents and curvature must match the shape of points")
+        if np.shape(self.lengths) != shape[:1] or np.shape(self.currents) != shape[:1]:
+            raise ValueError("lengths and currents need one value per coil")
+        if not (np.all(np.isfinite(self.points)) and np.all(np.isfinite(self.currents))):
+            raise ValueError("coil points and currents must be finite")
+        if not np.all(np.asarray(self.lengths) > 0.0):
+            raise ValueError("coil lengths must be positive")
 
     @property
     def n_coils(self) -> int:
@@ -119,6 +132,77 @@ def _to_float(token: str) -> float:
     return float(token.replace("D", "E").replace("d", "e"))
 
 
+def _find_periods(lines: list[str], path: Path) -> tuple[int, int]:
+    """Number of field periods and the index of the line after it."""
+    for i, line in enumerate(lines):
+        tokens = line.split()
+        if tokens and tokens[0].lower() == "periods":
+            try:
+                return int(tokens[1]), i + 1
+            except (IndexError, ValueError) as exc:
+                raise CoilFileError(f"{path}:{i + 1}: bad 'periods' line") from exc
+    raise CoilFileError(f"{path}: no 'periods' line found; not a MAKEGRID coils file")
+
+
+def _parse_filament_line(tokens: list[str], where: str, line: str):
+    """Split a data line into ``(x, y, z, current, group, name)``.
+
+    ``group`` is ``None`` for a line inside a coil; a line that carries a
+    group id and a name ends a coil.
+    """
+    if len(tokens) < 4:
+        raise CoilFileError(f"{where}: expected 'x y z current', got: {line.strip()}")
+    try:
+        x, y, z, cur = (_to_float(t) for t in tokens[:4])
+    except ValueError as exc:
+        raise CoilFileError(f"{where}: cannot parse numbers: {line.strip()}") from exc
+    if not all(np.isfinite(v) for v in (x, y, z, cur)):
+        raise CoilFileError(f"{where}: non-finite number: {line.strip()}")
+    if len(tokens) < 5:
+        return x, y, z, cur, None, ""
+    try:
+        group = int(float(tokens[4]))
+    except ValueError as exc:
+        raise CoilFileError(f"{where}: bad group id: {line.strip()}") from exc
+    return x, y, z, cur, group, " ".join(tokens[5:])
+
+
+def _circular_coil(x: float, y: float, z: float, current: float, group: int, name: str,
+                   circle_points: int) -> Coil:
+    """One-line coil: a circle around the z axis through the given point."""
+    radius = float(np.hypot(x, y))
+    ang = np.linspace(0.0, 2.0 * np.pi, circle_points, endpoint=False)
+    pts = np.column_stack([radius * np.cos(ang), radius * np.sin(ang), np.full_like(ang, z)])
+    return Coil(points=pts, current=current, group=group, name=name)
+
+
+def _filament_coil(points: list[list[float]], currents: list[float], closing_current: float,
+                   scale: float, group: int, name: str, where: str,
+                   warnings: list[str]) -> Coil:
+    """Build a coil from its filament points, noting anything irregular.
+
+    ``points`` includes the closing point; ``currents`` does not include the
+    closing line's current, which is passed separately.
+    """
+    values = np.array(currents)
+    if closing_current != 0.0:
+        warnings.append(f"{where}: closing point of coil '{name}' has non-zero current")
+    if np.ptp(values) > 1e-9 * max(1.0, float(np.max(np.abs(values)))):
+        warnings.append(f"coil ending at {where} ('{name}') has varying current; "
+                        "the first value is used")
+    pts = np.array(points)
+    closure = float(np.linalg.norm(pts[-1] - pts[0]))
+    extent = float(np.max(np.ptp(pts, axis=0)))
+    if closure > 1e-6 * extent:
+        warnings.append(f"coil ending at {where} ('{name}') is not closed "
+                        f"(gap {closure:.3g} m); it is closed with a straight segment")
+    try:
+        pts = clean_closed_points(pts)
+    except CurveError as exc:
+        raise CoilFileError(f"coil ending at {where}: {exc}") from exc
+    return Coil(points=pts, current=float(values[0]) * scale, group=group, name=name)
+
+
 def read_makegrid(
     path: str | Path,
     group_currents: dict[int, float] | None = None,
@@ -133,21 +217,10 @@ def read_makegrid(
     path = Path(path)
     if not path.is_file():
         raise CoilFileError(f"coil file not found: {path}")
+    if circle_points < 8:
+        raise CoilFileError("circle_points must be at least 8")
     lines = path.read_text(errors="replace").splitlines()
-
-    periods = None
-    start = None
-    for i, line in enumerate(lines):
-        tokens = line.split()
-        if tokens and tokens[0].lower() == "periods":
-            try:
-                periods = int(tokens[1])
-            except (IndexError, ValueError) as exc:
-                raise CoilFileError(f"{path}:{i + 1}: bad 'periods' line") from exc
-            start = i + 1
-            break
-    if start is None:
-        raise CoilFileError(f"{path}: no 'periods' line found; not a MAKEGRID coils file")
+    periods, start = _find_periods(lines, path)
 
     coils: list[Coil] = []
     warnings: list[str] = []
@@ -157,61 +230,23 @@ def read_makegrid(
 
     for lineno, line in enumerate(lines[start:], start=start + 1):
         tokens = line.split()
-        if not tokens:
+        if not tokens or tokens[0].lower() in ("begin", "mirror"):
             continue
-        key = tokens[0].lower()
-        if key == "end":
+        if tokens[0].lower() == "end":
             break
-        if key in ("begin", "mirror"):
-            continue
-        if len(tokens) < 4:
-            raise CoilFileError(f"{path}:{lineno}: expected 'x y z current', got: {line.strip()}")
-        try:
-            x, y, z, cur = (_to_float(t) for t in tokens[:4])
-        except ValueError as exc:
-            raise CoilFileError(f"{path}:{lineno}: cannot parse numbers: {line.strip()}") from exc
-
-        if len(tokens) < 5:
+        x, y, z, cur, group, name = _parse_filament_line(tokens, f"{path}:{lineno}", line)
+        if group is None:
             pending.append([x, y, z])
             pending_currents.append(cur)
             continue
-
-        # A line with a group id and a name ends a coil.
-        try:
-            group = int(float(tokens[4]))
-        except ValueError as exc:
-            raise CoilFileError(f"{path}:{lineno}: bad group id: {line.strip()}") from exc
-        name = " ".join(tokens[5:])
         scale = factor.get(group, 1.0)
-
         if not pending:
-            # One-line coil: a circle around the z axis.
-            if cur == 0.0:
-                continue
-            radius = float(np.hypot(x, y))
-            ang = np.linspace(0.0, 2.0 * np.pi, circle_points, endpoint=False)
-            pts = np.column_stack([radius * np.cos(ang), radius * np.sin(ang), np.full_like(ang, z)])
-            coils.append(Coil(points=pts, current=cur * scale, group=group, name=name))
+            if cur != 0.0:
+                coils.append(_circular_coil(x, y, z, cur * scale, group, name, circle_points))
             continue
-
         pending.append([x, y, z])
-        currents = np.array(pending_currents)
-        if cur != 0.0:
-            warnings.append(f"line {lineno}: closing point of coil '{name}' has non-zero current")
-        if np.ptp(currents) > 1e-9 * max(1.0, float(np.max(np.abs(currents)))):
-            warnings.append(f"coil ending at line {lineno} ('{name}') has varying current; "
-                            "the first value is used")
-        pts = np.array(pending)
-        closure = float(np.linalg.norm(pts[-1] - pts[0]))
-        extent = float(np.max(np.ptp(pts, axis=0)))
-        if closure > 1e-6 * extent:
-            warnings.append(f"coil ending at line {lineno} ('{name}') is not closed "
-                            f"(gap {closure:.3g} m); it is closed with a straight segment")
-        try:
-            pts = clean_closed_points(pts)
-        except CurveError as exc:
-            raise CoilFileError(f"{path}: coil ending at line {lineno}: {exc}") from exc
-        coils.append(Coil(points=pts, current=float(currents[0]) * scale, group=group, name=name))
+        coils.append(_filament_coil(pending, pending_currents, cur, scale, group, name,
+                                    f"line {lineno}", warnings))
         pending, pending_currents = [], []
 
     if pending:

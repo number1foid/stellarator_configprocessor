@@ -25,6 +25,7 @@ from dataclasses import dataclass
 
 import numpy as np
 
+from ._checks import positive, require
 from .constants import MU0
 from .field import biot_savart
 from .geometry.coils import coil_distances
@@ -55,7 +56,7 @@ class WindingPack:
     def diagonal(self) -> float:
         return float(np.hypot(self.radial, self.toroidal))
 
-    def scaled(self, factor: float) -> "WindingPack":
+    def scaled(self, factor: float) -> WindingPack:
         return WindingPack(self.radial * factor, self.toroidal * factor)
 
 
@@ -97,6 +98,8 @@ def bar_kernel(u, v, width_u: float, width_v: float):
     """
     u = np.asarray(u, dtype=float)
     v = np.asarray(v, dtype=float)
+    width_u = positive(width_u, "width_u")
+    width_v = positive(width_v, "width_v")
 
     def g(x, y):
         # Antiderivative of x / (x^2 + y^2) in x and y, without the -y term,
@@ -116,6 +119,7 @@ def bar_kernel(u, v, width_u: float, width_v: float):
 
 def filament_kernel(u, v, fil_u, fil_v, cell_area: float):
     """The same integrals for a set of straight filaments, each of weight ``cell_area``."""
+    cell_area = positive(cell_area, "cell_area")
     du = np.asarray(u, dtype=float)[..., None] - np.asarray(fil_u, dtype=float)
     dv = np.asarray(v, dtype=float)[..., None] - np.asarray(fil_v, dtype=float)
     rho2 = du * du + dv * dv
@@ -153,6 +157,53 @@ def _offsets(width: float, n: int):
     return centres, corners
 
 
+def _bundle(coils: SampledCoils, k: int, cu: np.ndarray, cv: np.ndarray,
+            n_r: np.ndarray, n_t: np.ndarray):
+    """Segments ``(start, end, current)`` of the filament bundle of coil ``k``."""
+    pts = (coils.points[k][None, None]
+           + cu[:, None, None, None] * n_r[k][None, None]
+           + cv[None, :, None, None] * n_t[k][None, None])  # [nr, nt, n, 3]
+    start = pts.reshape(-1, 3)
+    end = np.roll(pts, -1, axis=2).reshape(-1, 3)
+    cur = np.full(len(start), coils.currents[k] / (len(cu) * len(cv)))
+    return start, end, cur
+
+
+def _bar_minus_filaments(wp: WindingPack, cu, cv, ku, kv):
+    """Closed-form difference between a uniform bar and the filament bundle."""
+    uu, vv = np.meshgrid(ku, kv, indexing="ij")
+    bar_u, bar_v = bar_kernel(uu, vv, wp.radial, wp.toroidal)
+    fu, fv = np.meshgrid(cu, cv, indexing="ij")
+    fil_u, fil_v = filament_kernel(uu, vv, fu.ravel(), fv.ravel(),
+                                   wp.area / (len(cu) * len(cv)))
+    return bar_u - fil_u, bar_v - fil_v
+
+
+def _corner_weights(nr: int, nt: int) -> np.ndarray:
+    """Trapezoidal weights of the cell corners over the cross-section."""
+    wr = np.ones(nr + 1)
+    wr[[0, -1]] = 0.5
+    wt = np.ones(nt + 1)
+    wt[[0, -1]] = 0.5
+    return np.outer(wr / nr, wt / nt)
+
+
+def _far_field(coils: SampledCoils, far: np.ndarray, points: np.ndarray, ku, kv) -> np.ndarray:
+    """Field of distant coils, each taken as a single filament.
+
+    That field varies slowly over the cross-section: it is evaluated at the
+    four outer corners and interpolated bilinearly.
+    """
+    outer = points[:, [0, -1]][:, :, [0, -1]]
+    b4 = biot_savart(outer.reshape(-1, 3), *coils.segments(far)).reshape(outer.shape)
+    wu = ((ku - ku[0]) / (ku[-1] - ku[0]))[None, :, None, None]
+    wv = ((kv - kv[0]) / (kv[-1] - kv[0]))[None, None, :, None]
+    return ((1 - wu) * (1 - wv) * b4[:, 0, 0][:, None, None, :]
+            + wu * (1 - wv) * b4[:, 1, 0][:, None, None, :]
+            + (1 - wu) * wv * b4[:, 0, 1][:, None, None, :]
+            + wu * wv * b4[:, 1, 1][:, None, None, :])
+
+
 def winding_pack_field(
     coils: SampledCoils,
     wp: WindingPack,
@@ -178,83 +229,50 @@ def winding_pack_field(
     """
     n_r, n_t = frames if frames is not None else coil_frames(coils)
     nr, nt = n_sub
+    targets = np.atleast_1d(np.asarray(targets, dtype=int))
     if nr < 1 or nt < 1:
         raise ValueError("n_sub entries must be at least 1")
+    if not near_factor > 0.0:
+        raise ValueError("near_factor must be positive")
+    if targets.size and (targets.min() < 0 or targets.max() >= coils.n_coils):
+        raise ValueError("targets must be coil indices")
+    if stations is not None and len(stations) != len(targets):
+        raise ValueError("stations must have one entry per target")
     cu, ku = _offsets(wp.radial, nr)
     cv, kv = _offsets(wp.toroidal, nt)
-    targets = np.atleast_1d(np.asarray(targets, dtype=int))
-    all_stations = np.arange(coils.n_points)
-
-    def bundle(k):
-        """Segments of the filament bundle of coil k."""
-        pts = (coils.points[k][None, None]
-               + cu[:, None, None, None] * n_r[k][None, None]
-               + cv[None, :, None, None] * n_t[k][None, None])  # [nr, nt, n, 3]
-        start = pts.reshape(-1, 3)
-        end = np.roll(pts, -1, axis=2).reshape(-1, 3)
-        cur = np.full(len(start), coils.currents[k] / (nr * nt))
-        return start, end, cur
-
-    # Closed-form difference between a uniform bar and the filament bundle.
-    uu, vv = np.meshgrid(ku, kv, indexing="ij")
-    bar_u, bar_v = bar_kernel(uu, vv, wp.radial, wp.toroidal)
-    fu, fv = np.meshgrid(cu, cv, indexing="ij")
-    fil_u, fil_v = filament_kernel(uu, vv, fu.ravel(), fv.ravel(), wp.area / (nr * nt))
-    delta_u, delta_v = bar_u - fil_u, bar_v - fil_v
-
-    wr = np.ones(nr + 1)
-    wr[[0, -1]] = 0.5
-    wt = np.ones(nt + 1)
-    wt[[0, -1]] = 0.5
-    weights = np.outer(wr / nr, wt / nt)
+    delta_u, delta_v = _bar_minus_filaments(wp, cu, cv, ku, kv)
 
     fields, used_stations, used_points = [], [], []
     for pos, i in enumerate(targets):
-        st = all_stations if stations is None else np.asarray(stations[pos], dtype=int)
+        st = (np.arange(coils.n_points) if stations is None
+              else np.asarray(stations[pos], dtype=int))
         used_stations.append(st)
-        if len(st) == 0:
-            fields.append(np.zeros((0, nr + 1, nt + 1, 3)))
-            used_points.append(np.zeros((0, nr + 1, nt + 1, 3)))
-            continue
-        base = coils.points[i][st]
-        points = (base[:, None, None, :]
+        points = (coils.points[i][st][:, None, None, :]
                   + ku[None, :, None, None] * n_r[i][st][:, None, None, :]
                   + kv[None, None, :, None] * n_t[i][st][:, None, None, :])
+        used_points.append(points)
+        if len(st) == 0:
+            fields.append(np.zeros((0, nr + 1, nt + 1, 3)))
+            continue
 
-        dist = coil_distances(coils, int(i))
-        near = np.nonzero(dist < near_factor * wp.diagonal)[0]
-        far = np.array([k for k in range(coils.n_coils) if k != i and k not in set(near)],
-                       dtype=int)
-        parts = [bundle(int(i))] + [bundle(int(k)) for k in near]
-        start = np.concatenate([p[0] for p in parts])
-        end = np.concatenate([p[1] for p in parts])
-        cur = np.concatenate([p[2] for p in parts])
+        near = np.nonzero(coil_distances(coils, int(i)) < near_factor * wp.diagonal)[0]
+        far = np.setdiff1d(np.arange(coils.n_coils), np.append(near, i))
+        parts = [_bundle(coils, int(k), cu, cv, n_r, n_t) for k in (i, *near)]
+        start, end, cur = (np.concatenate([p[j] for p in parts]) for j in range(3))
         b = biot_savart(points.reshape(-1, 3), start, end, cur).reshape(points.shape)
         if len(far):
-            # The field of distant coils varies slowly over the cross-section:
-            # evaluate it at the four outer corners and interpolate bilinearly.
-            outer = points[:, [0, -1]][:, :, [0, -1]]
-            b4 = biot_savart(outer.reshape(-1, 3), *coils.segments(far)).reshape(outer.shape)
-            wu = ((ku - ku[0]) / (ku[-1] - ku[0]))[None, :, None, None]
-            wv = ((kv - kv[0]) / (kv[-1] - kv[0]))[None, None, :, None]
-            b = b + ((1 - wu) * (1 - wv) * b4[:, 0, 0][:, None, None, :]
-                     + wu * (1 - wv) * b4[:, 1, 0][:, None, None, :]
-                     + (1 - wu) * wv * b4[:, 0, 1][:, None, None, :]
-                     + wu * wv * b4[:, 1, 1][:, None, None, :])
-
+            b = b + _far_field(coils, far, points, ku, kv)
         if local_correction:
             tan = coils.tangents[i][st]
             t_x_nr = np.cross(tan, n_r[i][st])
             t_x_nt = np.cross(tan, n_t[i][st])
-            density = coils.currents[i] / wp.area
-            b = b + MU0 * density / (2.0 * np.pi) * (
+            b = b + MU0 * coils.currents[i] / wp.area / (2.0 * np.pi) * (
                 t_x_nr[:, None, None, :] * delta_u[None, :, :, None]
                 + t_x_nt[:, None, None, :] * delta_v[None, :, :, None])
         fields.append(b)
-        used_points.append(points)
 
     return PackField(targets=targets, stations=tuple(used_stations), points=tuple(used_points),
-                     b=tuple(fields), weights=weights, wp=wp)
+                     b=tuple(fields), weights=_corner_weights(nr, nt), wp=wp)
 
 
 def pack_clearance(coils: SampledCoils, wp: WindingPack, targets,
@@ -320,6 +338,11 @@ def fit_peak_field(radial_widths, peak_fields, current_ma: float, n_coils: int,
     peak_fields = np.asarray(peak_fields, dtype=float)
     if len(radial_widths) < 2:
         raise ValueError("at least two winding pack sizes are needed for the fit")
+    require(radial_widths.shape == peak_fields.shape, "one peak field per width is needed")
+    require(bool(np.all(radial_widths > 0.0)), "winding pack widths must be positive")
+    require(bool(np.all(np.isfinite(peak_fields))), "peak fields must be finite")
+    require(current_ma != 0.0 and n_coils >= 1, "the fit needs current and at least one coil")
+    require(r_major > r_minor > 0.0, "the coil major radius must exceed its minor radius")
     scale = 0.2 * current_ma * n_coils / (r_major - r_minor)
     design = np.column_stack([np.ones_like(radial_widths), r_major / radial_widths])
     (a1, a2), *_ = np.linalg.lstsq(design, peak_fields / scale, rcond=None)

@@ -22,6 +22,7 @@ from dataclasses import dataclass, field
 
 import numpy as np
 
+from ._checks import require
 from .constants import MU0
 from .field import biot_savart
 from .io.coils import SampledCoils
@@ -75,6 +76,7 @@ class AxisField:
 
 def axis_field(eq: Equilibrium, coils: SampledCoils, n_phi: int = 720) -> AxisField:
     """Evaluate the coil field along the full magnetic axis."""
+    require(n_phi >= 16, "the axis needs at least 16 points")
     phi = np.linspace(0.0, 2.0 * np.pi, n_phi, endpoint=False)
     pts = eq.axis_xyz(phi)
     # Central differences on the closed axis give second-order line elements.
@@ -118,7 +120,7 @@ def check_consistency(
     eq: Equilibrium,
     coils: SampledCoils,
     periods_in_file: int | None = None,
-    tolerances: Tolerances = Tolerances(),
+    tolerances: Tolerances | None = None,
     axis: AxisField | None = None,
     check_field: bool = True,
 ) -> ConsistencyResult:
@@ -127,6 +129,7 @@ def check_consistency(
     ``check_field=False`` skips the field-strength comparison. It is used
     when the coil currents are rescaled to match the equilibrium anyway.
     """
+    tolerances = tolerances or Tolerances()
     failures: list[str] = []
     n = coils.n_coils
 
@@ -155,7 +158,8 @@ def check_consistency(
     parallel = np.einsum("ij,ij->i", axis.b, tangent)
     perp = np.linalg.norm(axis.b - parallel[:, None] * tangent, axis=1)
     b_coils = axis.mean_strength
-    misalignment = float(np.sum(perp * arc) / np.sum(strength * arc)) if b_coils > 0 else float("nan")
+    misalignment = (float(np.sum(perp * arc) / np.sum(strength * arc)) if b_coils > 0
+                    else float("nan"))
     if not misalignment <= tolerances.axis_misalignment:
         failures.append(
             f"coil field is not tangent to the equilibrium's magnetic axis: mean "

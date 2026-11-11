@@ -20,6 +20,7 @@ from dataclasses import dataclass
 
 import numpy as np
 
+from ._checks import coil_index, points_array, positive, require
 from .constants import MU0
 from .geometry.coils import SymmetryClasses
 from .geometry.curves import sample_closed_curve
@@ -48,6 +49,9 @@ def self_inductance(points: np.ndarray, wp: WindingPack, resolution: float = 4.0
     The filament is resampled so that the spacing is ``1 / resolution`` of the
     GMD, which resolves the regularised kernel.
     """
+    points = points_array(points, "points")
+    require(points.ndim == 2 and len(points) >= 3, "a coil needs at least 3 points [n, 3]")
+    resolution = positive(resolution, "resolution")
     eps2 = gmd_squared(wp)
     coarse = sample_closed_curve(points, max(16, len(points)))
     n = int(max(64, np.ceil(resolution * coarse.length / np.sqrt(eps2))))
@@ -63,6 +67,7 @@ def self_inductance(points: np.ndarray, wp: WindingPack, resolution: float = 4.0
 
 def flux_from_others(coils: SampledCoils, i: int) -> float:
     """Flux through coil ``i`` produced by all other coils [Wb]."""
+    i = coil_index(i, coils.n_coils)
     others = np.array([j for j in range(coils.n_coils) if j != i], dtype=int)
     if len(others) == 0:
         return 0.0
@@ -90,6 +95,7 @@ class EnergyResult:
     @property
     def effective_inductance(self) -> float:
         """``2 W / I^2`` with ``I`` the reference current per coil [H]."""
+        require(self.reference_current != 0.0, "the reference current is zero")
         return 2.0 * self.energy / self.reference_current**2
 
 
@@ -101,6 +107,10 @@ def magnetic_energy(coils: SampledCoils, wp: WindingPack,
     representative per class is evaluated.
     """
     reps = classes.representatives
+    require(len(reps) > 0 and len(reps) == len(classes.multiplicity),
+            "symmetry classes need one multiplicity per representative")
+    require(int(np.sum(classes.multiplicity)) == coils.n_coils,
+            "symmetry classes do not cover the coil set")
     self_l = np.array([self_inductance(coils.points[int(i)], wp) for i in reps])
     flux = np.array([self_l[c] * coils.currents[int(i)] + flux_from_others(coils, int(i))
                      for c, i in enumerate(reps)])
