@@ -10,3 +10,5 @@ dist/
 scripts/dev_*.py
 *.log
 runs/
+# kept locally, not part of the repository
+/IMPLEMENTATION_OUTLINE.md

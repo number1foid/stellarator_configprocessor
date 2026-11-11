@@ -1,4 +1,180 @@
+![A stellarator during assembly, surrounded by scaffolding](docs/images/stellarator_assembly.webp)
+
 # stellarator_configprocessor
+
+[Nederlands](#nederlands) | [English](#english)
+
+---
+
+<a id="nederlands"></a>
+
+# Nederlands
+
+Een open preprocessor voor het stellaratormodel van
+[PROCESS](https://github.com/ukaea/process), de systeemcode voor
+fusiecentrales.
+
+PROCESS kan elke modulaire stellarator modelleren als het een
+configuratiebestand (`stella_conf.json`) krijgt met vooraf berekende
+"effectieve parameters" voor dat ontwerp. Het programma dat de documentatie
+van PROCESS noemt om dit bestand te maken, pre-sPROCESS, is niet openbaar
+beschikbaar. Dit project berekent hetzelfde bestand uit twee gangbare
+invoerbestanden:
+
+- een plasma-evenwicht: VMEC-`wout`-bestand (NetCDF);
+- een spoelenset: MAKEGRID-bestand `coils.*` met filamentkrommen en stromen.
+
+De methode volgt Lion et al., *Nuclear Fusion* 61 (2021) 126021.
+
+## Status
+
+Ontwikkelversie, nog niet uitgebracht. Geschreven voor PROCESS 3.4.2.
+
+- Alle 35 waarden die PROCESS leest, worden geschreven. Twee daarvan
+  (`epseff`, `neutron_peakfactor`) worden doorgegeven vanaf de opdrachtregel
+  en niet berekend.
+- PROCESS 3.4.2 accepteert het gegenereerde bestand met `istell = 6`.
+- Voor de W7-X-spoelen zoals gebouwd komen de berekende waarden binnen enkele
+  procenten overeen met de ingebouwde W7-X-set van PROCESS. De verschillen
+  worden verklaard in [docs/w7x_comparison.md](docs/w7x_comparison.md).
+
+## Installatie
+
+Python 3.10 of nieuwer. Afhankelijkheden: NumPy en netCDF4.
+
+```
+pip install -e .
+```
+
+## Gebruik
+
+```
+stellarator-configprocessor wout_mydesign.nc coils.mydesign \
+    --wp-radial 0.6 --wp-toroidal 0.5 \
+    --epseff 0.015 --neutron-peakfactor 1.6 \
+    --process-input myrun.IN.DAT --report myrun_report.txt
+```
+
+Dit schrijft `myrun.stella_conf.json` naast `myrun.IN.DAT`, de plek waar
+PROCESS het zoekt, en een rapport met elke waarde, de eenheid en de manier
+waarop ze is verkregen.
+
+De vier getoonde instellingen hebben geen standaardwaarde: de resultaten
+hangen af van de afmetingen van het wikkelpakket, en de laatste twee kan dit
+programma niet berekenen.
+
+Zie [docs/user_guide.md](docs/user_guide.md) voor alle opties en een
+uitgewerkt voorbeeld van bestanden tot een PROCESS-run.
+
+## Documentatie
+
+De documenten zelf zijn in het Engels.
+
+| Document | Inhoud |
+|---|---|
+| [docs/user_guide.md](docs/user_guide.md) | Opties, invoer, uitgewerkt W7-X-voorbeeld, Python-interface, gebruiksbeperkingen |
+| [docs/schema.md](docs/schema.md) | Elke sleutel van `stella_conf.json`: eenheid, hoe PROCESS haar gebruikt, hoe ze wordt berekend; referentiewaarden |
+| [docs/w7x_comparison.md](docs/w7x_comparison.md) | PROCESS-run met het gegenereerde W7-X-bestand tegenover de ingebouwde W7-X-set |
+| [docs/hsx_check.md](docs/hsx_check.md) | Tweede machine (HSX): controle op algemene toepasbaarheid en wat die aan het licht bracht |
+
+## Verificatie
+
+```
+pip install -e ".[test]"
+python scripts/fetch_reference_data.py    # optioneel: openbare W7-X- en HSX-bestanden
+pytest
+```
+
+| Grootheid | Gecontroleerd tegen | Overeenkomst |
+|---|---|---|
+| Plasmavolume, -oppervlak, stralen | cirkelvormige torus (analytisch); de waarden van VMEC zelf voor W7-X | 1e-12; 1e-10 |
+| Veld van een filament | cirkelvormige lus en rechte draad (analytisch) | 1e-4 |
+| Veld op de as van de W7-X-spoelen | het vacuümevenwicht van W7-X | 5e-6 |
+| Veld binnen de geleider | rechte rechthoekige staaf (gesloten uitdrukking) | 2%, beperkt door de kromming van de lus |
+| Zelfinductie | formule voor een cirkelvormige lus; volume-integraal van B^2 | 0,2%; 2% |
+| Wederzijdse inductie | coaxiale lussen (elliptische integralen) | 1e-4 |
+| Hoepelkracht | formule voor een cirkelvormige lus | 2% |
+| Netto kracht op een spoel | afgeleide van de magnetische energie (virtuele arbeid) | 0,6% |
+| Veld op de as, spoellengtes (W7-X) | SIMSOPT, in CI | 1e-3; 1e-4 |
+| Volledig W7-X-resultaat | ingebouwde W7X-50-waarden van PROCESS | zie docs/w7x_comparison.md |
+| Volledig HSX-resultaat | consistentie met het evenwicht; plausibiliteit | zie docs/hsx_check.md |
+
+Tests die de W7-X- of HSX-bestanden nodig hebben, worden overgeslagen als die
+bestanden ontbreken. De kruiscontrole met SIMSOPT wordt overgeslagen als
+SIMSOPT niet is geïnstalleerd.
+
+## Bekende problemen
+
+### Nog niet geverifieerd
+
+- **Geen onafhankelijke controle van piekveld, energie en krachten op een
+  echte machine.** Deze berusten op analytische testgevallen en op
+  overeenkomst met de ingebouwde W7-X-waarden van PROCESS, waarvan sommige
+  zijn afgerond of plaatshouders zijn. De kruiscontrole met SIMSOPT dekt
+  alleen het filamentveld en de spoellengtes.
+- **Twee onverklaarde verschillen met de ingebouwde W7-X-waarden.** `a2` ligt
+  25% boven de ingebouwde waarde en `max_lateral_force_density` 10% erboven.
+  De fit reproduceert de velden die dit programma berekent tot op 0,06%;
+  welke kant gelijk heeft, staat niet vast.
+- **Drie definities zijn beredeneerde aannames.** Voor `coil_rminor`,
+  `coilsurface` en `max_portsize_width` is geen formule gepubliceerd. De
+  gebruikte definities zijn gekozen omdat ze passen bij de beschikbare
+  referentiewaarden; alleen de auteurs van het oorspronkelijke programma
+  kunnen ze bevestigen. Zie [docs/schema.md](docs/schema.md).
+- **Geen volledig geoptimaliseerd PROCESS-ontwerp.** PROCESS leest en
+  evalueert de gegenereerde bestanden. Een optimalisatie op reactorschaal
+  vond geen haalbare centrale voor W7-X, noch met de gegenereerde, noch met
+  de ingebouwde configuratie, en voor een andere machine is geen
+  optimalisatie uitgevoerd.
+- **Paden zonder test op echte gegevens.** Spoelensets met ongelijke stromen,
+  evenwichten zonder stellaratorsymmetrie en evenwichten met eindige druk
+  worden door de code afgehandeld, maar zijn alleen op synthetische gevallen
+  of helemaal niet uitgevoerd.
+- **De nauwkeurigheid voor HSX is onbekend.** De tweede machine laat zien dat
+  het programma algemeen toepasbaar is en plausibele resultaten geeft; er
+  zijn geen referentiewaarden voor.
+
+### Niet gedaan
+
+- **`epseff` en `neutron_peakfactor` worden niet berekend.** Het zijn
+  verplichte invoerwaarden die worden doorgegeven aan het bestand. Zolang ze
+  niet worden berekend, vervangt het programma pre-sPROCESS niet volledig.
+- **PROCESS maakt geen deel uit van de geautomatiseerde tests.** Het schema
+  is alleen via de documenten aan PROCESS 3.4.2 gekoppeld, zodat een
+  schemawijziging in PROCESS niet automatisch wordt opgemerkt.
+
+### Bewuste keuzes
+
+- **Alleen modulaire spoelen.** Elke spoel moet poloïdaal om het plasma
+  sluiten.
+- **Eén spoelstroom.** PROCESS schaalt één stroom, dus spoelensets met
+  ongelijke stromen worden teruggebracht tot hun gemiddelde absolute stroom,
+  met een waarschuwing. Spoelen zonder stroom worden genegeerd.
+- **Invoerformaten.** Alleen VMEC-`wout` en MAKEGRID.
+
+### In PROCESS zelf
+
+Gevonden bij het lezen en uitvoeren van PROCESS 3.4.2; details in
+[docs/schema.md](docs/schema.md), sectie 6.
+
+- De documentatie verwisselt `istell = 4` en `istell = 5`: in de code is 4
+  de W7-X-set met 30 spoelen en 5 de set met 50 spoelen.
+- Een sleutel die in het configuratiebestand ontbreekt, wordt stilzwijgend
+  als nul gelezen.
+- De centrerende krachten worden geschaald met de verhouding van de
+  spoellengtes omgekeerd ten opzichte van vgl. (43) van Lion et al. 2021.
+- Op Windows zelf mislukt een run zonder de noodoplossingen in
+  `scripts/run_process_windows.py`.
+
+## Licentie
+
+MIT. Zie [LICENSE](LICENSE).
+
+---
+
+<a id="english"></a>
+
+# English
 
 An open pre-processor for the stellarator model of the
 [PROCESS](https://github.com/ukaea/process) fusion power plant systems code.
@@ -61,7 +237,6 @@ example from files to a PROCESS run.
 | [docs/schema.md](docs/schema.md) | Every key of `stella_conf.json`: unit, how PROCESS uses it, how it is computed; reference values |
 | [docs/w7x_comparison.md](docs/w7x_comparison.md) | PROCESS run with the generated W7-X file against the built-in W7-X set |
 | [docs/hsx_check.md](docs/hsx_check.md) | Second machine (HSX): generality check and what it exposed |
-| [IMPLEMENTATION_OUTLINE.md](IMPLEMENTATION_OUTLINE.md) | Project plan and design decisions |
 
 ## Verification
 
@@ -122,9 +297,6 @@ SIMSOPT cross-check is skipped when SIMSOPT is not installed.
 - **PROCESS is not part of the automated tests.** The schema is tied to
   PROCESS 3.4.2 by the documents only, so a schema change upstream would not
   be caught automatically.
-- **The implementation outline is partly out of date.** Its "not confirmed"
-  list and its Phase 2 step on boundary coefficients predate what the
-  PROCESS source showed; [docs/schema.md](docs/schema.md) is authoritative.
 
 ### By design
 
