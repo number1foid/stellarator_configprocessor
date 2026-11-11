@@ -3,8 +3,8 @@ name: tests
 on:
   push:
   pull_request:
-  # Rule 10 asks for a daily analysis. GitHub starts scheduled runs only from
-  # the default branch.
+  # Rule 10 asks for a daily analysis. GitHub starts scheduled runs from the
+  # default branch.
   schedule:
     - cron: "17 4 * * *"
 

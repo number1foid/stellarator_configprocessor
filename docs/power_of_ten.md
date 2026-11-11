@@ -193,9 +193,8 @@ system allocator and never dereferences them.
 - Three analysers run on every push: the compiler, Clippy, and the rule
   checker in `tests/power_of_ten.rs`. `rustfmt --check` runs as well.
 
-**Limit.** The workflow also defines a daily run, but GitHub starts
-scheduled runs only from the default branch. Until this branch is the
-default, the analysis runs on every push and not daily.
+A daily run is scheduled as well; GitHub starts scheduled runs from the
+default branch, `main`, which holds this code.
 
 ## How to run the checks
 

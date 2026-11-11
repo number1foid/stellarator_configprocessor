@@ -26,18 +26,22 @@ invoerbestanden:
 
 De methode volgt Lion et al., *Nuclear Fusion* 61 (2021) 126021.
 
-**Deze tak (`rust`) bevat de Rust-versie**, geschreven volgens de tien regels
-van "The Power of Ten" van NASA/JPL voor veiligheidskritische code. De
-oorspronkelijke Python-versie staat op de tak `main`. Beide geven dezelfde
-resultaten.
+Het programma is geschreven in Rust, volgens de tien regels van "The Power of
+Ten" van NASA/JPL voor veiligheidskritische code.
+
+> **De Python-versie is buiten gebruik gesteld.** Het programma is eerst in
+> Python geschreven en daarna herschreven in Rust. De Python-versie wordt
+> niet meer onderhouden en heeft geen eigen tak meer op GitHub. Haar laatste
+> stand is commit `10a3c70` in de geschiedenis van `main`. Beide versies
+> gaven dezelfde resultaten.
 
 ## Status
 
 Ontwikkelversie, nog niet uitgebracht. Geschreven voor PROCESS 3.4.2.
 
-- De Rust-versie geeft voor W7-X, HSX en een herschaalde W7-X dezelfde
-  waarden als de Python-versie, tot op beter dan 1e-10, en is ongeveer zes
-  keer zo snel (9 s tegenover 51 s voor W7-X).
+- Het programma geeft voor W7-X, HSX en een herschaalde W7-X dezelfde
+  waarden als de vroegere Python-versie, tot op beter dan 1e-10, en is
+  ongeveer zes keer zo snel (9 s tegenover 51 s voor W7-X).
 - De code voldoet aan de tien regels; een geautomatiseerde controle bewaakt
   dat. Zie [docs/power_of_ten.md](docs/power_of_ten.md) voor wat dat precies
   inhoudt, hoe het wordt gecontroleerd en waar een regel voor Rust is
@@ -125,10 +129,11 @@ berekening geen geheugen wordt aangevraagd, en de functionele tests.
 Tests die de W7-X- of HSX-bestanden nodig hebben, melden dat ze zijn
 overgeslagen als die bestanden ontbreken.
 
-De Python-versie op `main` heeft daarnaast analytische tests voor de
-wederzijdse inductie, de hoepelkracht, virtuele arbeid en het veld binnen een
-staaf, en een kruiscontrole met SIMSOPT. Die zijn niet naar Rust overgezet;
-voor de Rust-versie gelden ze via de overeenkomst met de Python-resultaten.
+De buiten gebruik gestelde Python-versie (commit `10a3c70`) had daarnaast
+analytische tests voor de wederzijdse inductie, de hoepelkracht, virtuele
+arbeid en het veld binnen een staaf, en een kruiscontrole met SIMSOPT. Die
+zijn niet naar Rust overgezet; voor de Rust-versie gelden ze via de
+overeenkomst met de Python-resultaten.
 
 ## Bekende problemen
 
@@ -170,7 +175,7 @@ voor de Rust-versie gelden ze via de overeenkomst met de Python-resultaten.
   is alleen via de documenten aan PROCESS 3.4.2 gekoppeld, zodat een
   schemawijziging in PROCESS niet automatisch wordt opgemerkt.
 
-### Alleen in de Rust-versie
+### Gevolgen van de codeerregels
 
 - **Alleen het klassieke NetCDF-formaat.** `wout`-bestanden in NetCDF-4
   (HDF5) worden geweigerd; zet ze om met `nccopy -k classic`. VMEC2000
@@ -184,9 +189,6 @@ voor de Rust-versie gelden ze via de overeenkomst met de Python-resultaten.
   vóór de berekening geopend. Een bestaand bestand blijft bij een fout
   ongewijzigd; een nieuw bestand blijft leeg achter.
 - **Niet alle analytische tests zijn overgezet**, zie Verificatie.
-- **De dagelijkse statische analyse draait nog niet.** GitHub start geplande
-  runs alleen vanaf de standaardtak; op deze tak draait de analyse bij elke
-  push.
 - **De regels gelden voor het programma zelf**, niet voor de tests, de
   Python-hulpscripts en de standaardbibliotheek van Rust.
 
@@ -239,17 +241,21 @@ from two standard inputs:
 
 The method follows Lion et al., *Nuclear Fusion* 61 (2021) 126021.
 
-**This branch (`rust`) holds the Rust version**, written to the ten rules of
-NASA/JPL's "The Power of Ten" for safety-critical code. The original Python
-version is on the `main` branch. Both give the same results.
+The program is written in Rust, to the ten rules of NASA/JPL's "The Power of
+Ten" for safety-critical code.
+
+> **The Python version is retired.** The program was first written in Python
+> and then rewritten in Rust. The Python version is no longer maintained and
+> no longer has a branch of its own on GitHub. Its last state is commit
+> `10a3c70` in the history of `main`. Both versions gave the same results.
 
 ## Status
 
 Development version, not yet released. Written against PROCESS 3.4.2.
 
-- For W7-X, HSX and a rescaled W7-X the Rust version gives the same values
-  as the Python version, to better than 1e-10, and is about six times faster
-  (9 s against 51 s for W7-X).
+- For W7-X, HSX and a rescaled W7-X the program gives the same values as
+  the former Python version, to better than 1e-10, and is about six times
+  faster (9 s against 51 s for W7-X).
 - The code meets the ten rules, and an automated check keeps it that way.
   See [docs/power_of_ten.md](docs/power_of_ten.md) for what that means
   exactly, how it is checked, and where a rule had to be interpreted for
@@ -334,10 +340,10 @@ requested during the calculation, and the functional tests.
 Tests that need the W7-X or HSX files report that they were skipped when the
 files are absent.
 
-The Python version on `main` also has analytic tests for the mutual
-inductance, the hoop force, virtual work and the field inside a bar, and a
-cross-check against SIMSOPT. These have not been ported to Rust; they apply
-to the Rust version through its agreement with the Python results.
+The retired Python version (commit `10a3c70`) also had analytic tests for the
+mutual inductance, the hoop force, virtual work and the field inside a bar,
+and a cross-check against SIMSOPT. These have not been ported to Rust; they
+apply to the Rust version through its agreement with the Python results.
 
 ## Known issues
 
@@ -374,7 +380,7 @@ to the Rust version through its agreement with the Python results.
   PROCESS 3.4.2 by the documents only, so a schema change upstream would not
   be caught automatically.
 
-### In the Rust version only
+### Consequences of the coding rules
 
 - **NetCDF classic format only.** `wout` files in NetCDF-4 (HDF5) are
   rejected; convert them with `nccopy -k classic`. VMEC2000 writes the
@@ -387,9 +393,6 @@ to the Rust version through its agreement with the Python results.
   before the calculation. After an error an existing file is unchanged; a new
   file is left behind empty.
 - **Not all analytic tests have been ported**, see Verification.
-- **The daily static analysis does not run yet.** GitHub starts scheduled
-  runs only from the default branch; on this branch the analysis runs on
-  every push.
 - **The rules cover the program itself**, not the tests, the Python helper
   scripts or Rust's standard library.
 
