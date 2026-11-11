@@ -58,7 +58,14 @@ def test_unsymmetric_set_gives_one_class_per_coil():
     assert sorted(classes.multiplicity) == [1, 3]
 
 
-def test_coil_surface_is_polygonal_torus(tf):
+def test_coil_surface_of_circular_coils_is_the_torus(tf):
+    assert cg.coil_surface_area(tf) == pytest.approx(4 * np.pi**2 * R0 * AC, rel=1e-4)
+    r_major, _, _ = cg.coil_radii(tf)
+    assert cg.coil_surface_area(tf) == pytest.approx(
+        2 * np.pi * r_major * tf.lengths.mean(), rel=1e-12)
+
+
+def test_lofted_surface_is_polygonal_torus(tf):
     # Straight strips join neighbouring coils. At poloidal angle theta a strip
     # has chord width 2 (R0 + a cos theta) sin(pi/N), and the coil element makes
     # an angle with the chord whose sine is sqrt(1 - sin^2 theta sin^2(pi/N)).
@@ -67,19 +74,12 @@ def test_coil_surface_is_polygonal_torus(tf):
     integrand = (2 * (R0 + AC * np.cos(theta)) * np.sin(half)
                  * np.sqrt(1 - np.sin(theta) ** 2 * np.sin(half) ** 2))
     expected = N * AC * integrand.mean() * 2 * np.pi
-    assert cg.coil_surface_area(tf) == pytest.approx(expected, rel=1e-3)
-    # Within 2% of the smooth torus for 20 coils.
-    assert cg.coil_surface_area(tf) == pytest.approx(4 * np.pi**2 * R0 * AC, rel=0.02)
+    assert cg.lofted_surface_area(tf) == pytest.approx(expected, rel=1e-3)
+    assert cg.lofted_surface_area(tf) < cg.coil_surface_area(tf)
 
 
-def test_port_width_is_gap_at_the_top(tf):
-    # Shortest distance from the top of one coil, (R0, 0, a), to the next coil,
-    # which lies in the plane rotated by 2 pi / N.
-    theta = np.linspace(0, 2 * np.pi, 200001)
-    r = R0 + AC * np.cos(theta)
-    d2 = R0**2 + r**2 - 2 * R0 * r * np.cos(2 * np.pi / N) + (AC - AC * np.sin(theta)) ** 2
-    assert cg.port_width(tf) == pytest.approx(np.sqrt(d2.min()), rel=1e-3)
-    assert cg.port_width(tf) < 2 * R0 * np.sin(np.pi / N)
+def test_port_width_is_coil_spacing(tf):
+    assert cg.port_width(tf) == pytest.approx(2 * R0 * np.sin(np.pi / N), rel=1e-4)
 
 
 def test_alignment_is_independent_of_start_point_and_direction(tf):
@@ -114,6 +114,6 @@ def test_w7x_geometry_is_close_to_process_builtin():
     assert cg.min_coil_coil_distance(sc, classes) == pytest.approx(0.28, rel=0.03)
     assert cg.min_bend_radius(sc) == pytest.approx(0.39, rel=0.05)
     assert cg.plasma_coil_distance(eq, sc) == pytest.approx(0.39, rel=0.03)
-    assert cg.coil_surface_area(sc) == pytest.approx(299.85, rel=0.05)
+    assert cg.coil_surface_area(sc) == pytest.approx(299.85, rel=0.01)
     slope, _, _ = cg.plasma_coil_distance_derivative(eq, sc)
     assert -1.2 < slope < -0.2
