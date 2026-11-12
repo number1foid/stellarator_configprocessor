@@ -13,6 +13,7 @@
 Een open preprocessor voor het stellaratormodel van
 [PROCESS](https://github.com/ukaea/process), de systeemcode voor
 fusiecentrales.
+Gemaakt in Rust. Voldoet aan NASA-P10.
 
 PROCESS kan elke modulaire stellarator modelleren als het een
 configuratiebestand (`stella_conf.json`) krijgt met vooraf berekende
@@ -229,6 +230,7 @@ MIT. Zie [LICENSE](LICENSE).
 
 An open pre-processor for the stellarator model of the
 [PROCESS](https://github.com/ukaea/process) fusion power plant systems code.
+Made in Rust. NASA-P10 compliant.
 
 PROCESS can model any modular stellarator if it is given a configuration file
 (`stella_conf.json`) of pre-calculated "effective parameters" for that design.
