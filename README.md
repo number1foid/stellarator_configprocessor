@@ -38,7 +38,7 @@ Ten" van NASA/JPL voor veiligheidskritische code.
 
 ## Status
 
-Ontwikkelversie, nog niet uitgebracht. Geschreven voor PROCESS 3.4.2.
+Scope voltooid. Geschreven voor PROCESS 3.4.2.
 
 - Het programma geeft voor W7-X, HSX en een herschaalde W7-X dezelfde
   waarden als de vroegere Python-versie, tot op beter dan 1e-10, en is
@@ -253,7 +253,7 @@ Ten" for safety-critical code.
 
 ## Status
 
-Development version, not yet released. Written against PROCESS 3.4.2.
+Scope fulfilled. Written against PROCESS 3.4.2.
 
 - For W7-X, HSX and a rescaled W7-X the program gives the same values as
   the former Python version, to better than 1e-10, and is about six times
